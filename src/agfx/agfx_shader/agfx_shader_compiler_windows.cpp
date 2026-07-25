@@ -11,6 +11,7 @@
 #include <vector>
 #include <string>
 #include "dxc/dxcapi.h"
+#include <d3d12shader.h>
 
 template<typename T>
 class DxcPtr {
@@ -123,5 +124,47 @@ void agfxCompileShader(agfxShaderCompilerOptions* options, agfxShaderCompilerRes
 
     output->compiledCode = result;
     output->compiledSize = bytecodeSize;
+
+    // Get reflection if it's compute, mesh or task shader
+    if (options->stage == agfxShaderStage::AGFX_SHADER_STAGE_COMPUTE ||
+        options->stage == agfxShaderStage::AGFX_SHADER_STAGE_MESH ||
+        options->stage == agfxShaderStage::AGFX_SHADER_STAGE_TASK) {
+        DxcPtr<IDxcBlob> pReflectionBlob;
+        if (SUCCEEDED(pResult->GetOutput(DXC_OUT_REFLECTION, IID_PPV_ARGS(pReflectionBlob.GetAddressOf()), nullptr)) && pReflectionBlob) {
+            DxcBuffer reflectionBuffer = {};
+            reflectionBuffer.Ptr = pReflectionBlob->GetBufferPointer();
+            reflectionBuffer.Size = pReflectionBlob->GetBufferSize();
+            reflectionBuffer.Encoding = 0;
+
+            ID3D12ShaderReflection* pShaderReflection = nullptr;
+            if (SUCCEEDED(pUtils->CreateReflection(&reflectionBuffer, IID_PPV_ARGS(&pShaderReflection))) && pShaderReflection) {
+                uint32_t sizeX = 0, sizeY = 0, sizeZ = 0;
+                pShaderReflection->GetThreadGroupSize(&sizeX, &sizeY, &sizeZ);
+
+                switch (options->stage) {
+                case agfxShaderStage::AGFX_SHADER_STAGE_COMPUTE:
+                    output->tgSizeX = sizeX;
+                    output->tgSizeY = sizeY;
+                    output->tgSizeZ = sizeZ;
+                    break;
+                case agfxShaderStage::AGFX_SHADER_STAGE_MESH:
+                    output->meshSizeX = sizeX;
+                    output->meshSizeY = sizeY;
+                    output->meshSizeZ = sizeZ;
+                    break;
+                case agfxShaderStage::AGFX_SHADER_STAGE_TASK:
+                    output->taskSizeX = sizeX;
+                    output->taskSizeY = sizeY;
+                    output->taskSizeZ = sizeZ;
+                    break;
+                default:
+                    break;
+                }
+
+                pShaderReflection->Release();
+            }
+        }
+    }
+
     return;
 }
