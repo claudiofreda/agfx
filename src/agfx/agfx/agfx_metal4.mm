@@ -1462,6 +1462,11 @@ agfxRenderPass* agfxRenderPassBegin(agfxCommandBuffer* cmdBuffer, const agfxRend
 }
 
 void agfxRenderPassEnd(agfxRenderPass* renderPass) {
+    // NOTE: Otherwise there is no barriers between render encoders
+    [renderPass->encoder barrierAfterStages:MTLStageFragment
+                          beforeQueueStages:MTLStageFragment
+                          visibilityOptions:MTL4VisibilityOptionDevice];
+    
     [renderPass->encoder endEncoding];
     renderPass->cmdBuffer->currentEncoder = nil;
     renderPass->encoder = nil;
