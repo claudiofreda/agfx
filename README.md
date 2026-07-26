@@ -8,6 +8,8 @@ AGFX is a small (<10k LOC) wrapper over D3D12 and Metal 4, designed to make it e
 
 It is designed to be bindless first, which is pretty reasonable considering any GPU that isn't older than the library's author should support it (I was born in 2006!).
 
+The library is currently usable but still a **work-in-progress**. Expect breaking API changes until I'm done with adding new features (check missing features section).
+
 ## Design
 
 AGFX takes the coding style of Vulkan/WebGPU -- C compliant, that way it's easy to make bindings for other languages.
@@ -64,12 +66,14 @@ In this repository you can find a few different folders:
 
 Bindings for Zig, Rust and Odin can be find [here](https://github.com/AmelieHeinrich/agfx-bindings)
 
-## Missing features (unplanned, PRs open)
+## Missing features
 
-- Vulkan backend
-- Sparse resources
+- Vulkan, PS5, Switch 2 backend
 - Resource aliasing
-- GPU heaps
+- Pipeline caching
+- Debug markers for D3D12
+- Sparse resources (unplanned)
+- Support for Slang + BDA (unplanned)
 
 ## AI Notice
 
