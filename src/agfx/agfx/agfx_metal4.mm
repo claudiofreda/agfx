@@ -25,11 +25,16 @@ struct agfxRenderPipeline {
     agfxRenderPipelineCreateInfo createInfo;
     id<MTLRenderPipelineState> pipelineState;
     id<MTLDepthStencilState> depthStencilState;
+    // Kept alive so agfxRenderPipelineGetCache can re-add the pipeline's functions to a fresh
+    // binary archive. Exactly one of the two is set, depending on which path was taken.
+    MTLRenderPipelineDescriptor* descriptor;
+    MTLMeshRenderPipelineDescriptor* meshDescriptor;
 };
 
 struct agfxComputePipeline {
     agfxComputePipelineCreateInfo createInfo;
     id<MTLComputePipelineState> pipelineState;
+    MTLComputePipelineDescriptor* descriptor;
 };
 
 struct agfxTLAB {
@@ -1023,6 +1028,8 @@ agfxCommandBuffer* agfxCommandBufferCreate(agfxDevice* device, agfxCommandQueue*
     commandBuffer->drawArgumentAllocator = new(drawArgumentMemory) agfxMetalLinearAllocator(device->device, device->residencySet, (sizeof(uint) * 5) * 4096);
     commandBuffer->drawUniformAllocator = new(drawUniformMemory) agfxMetalLinearAllocator(device->device, device->residencySet, sizeof(agfxTLAB) * 8192);
 
+    [device->residencySet commit];
+
     return commandBuffer;
 }
 
@@ -1680,6 +1687,81 @@ void agfxShaderModuleDestroy(agfxDevice* device, agfxShaderModule* shaderModule)
     device->createInfo.free(shaderModule);
 }
 
+// Pipeline cache
+//
+// The agfx API traffics in memory blobs, but MTLBinaryArchive is file-URL oriented in both
+// directions (it loads from MTLBinaryArchiveDescriptor.url and writes via serializeToURL:). These
+// two helpers bridge the gap through a uniquely named temporary file, which is always removed
+// before returning.
+
+static NSURL* agfxMetalMakeTempArchiveURL() {
+    NSString* name = [NSString stringWithFormat:@"agfx-%@.metallib", [[NSUUID UUID] UUIDString]];
+    return [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:name]];
+}
+
+// Returns nil when there is no usable cache. A stale or corrupt blob (different OS build, different
+// GPU) is not an error: the caller then compiles from scratch, as agfxDeviceInfo::driverVersion
+// documents.
+static id<MTLBinaryArchive> agfxMetalLoadArchive(agfxDevice* device, const uint8_t* blob, uint64_t size) {
+    if (!blob || size == 0) return nil;
+
+    NSURL* url = agfxMetalMakeTempArchiveURL();
+    NSData* data = [NSData dataWithBytes:blob length:(NSUInteger)size];
+    NSError* error = nil;
+    if (![data writeToURL:url options:NSDataWritingAtomic error:&error]) {
+        agfxLog(device, AGFX_LOG_SEVERITY_WARNING, "agfxMetalLoadArchive: failed to stage cache blob: %s",
+            error.localizedDescription.UTF8String);
+        return nil;
+    }
+
+    MTLBinaryArchiveDescriptor* descriptor = [MTLBinaryArchiveDescriptor new];
+    descriptor.url = url;
+    id<MTLBinaryArchive> archive = [device->device newBinaryArchiveWithDescriptor:descriptor error:&error];
+    [[NSFileManager defaultManager] removeItemAtURL:url error:nil];
+
+    if (!archive) {
+        agfxLog(device, AGFX_LOG_SEVERITY_WARNING, "agfxMetalLoadArchive: ignoring unusable pipeline cache: %s",
+            error.localizedDescription.UTF8String);
+    }
+    return archive;
+}
+
+// Returns a buffer owned by the device allocator, or NULL on failure (leaving *outSize untouched).
+static uint8_t* agfxMetalSerializeArchive(agfxDevice* device, id<MTLBinaryArchive> archive, uint64_t* outSize) {
+    NSURL* url = agfxMetalMakeTempArchiveURL();
+    NSError* error = nil;
+    if (![archive serializeToURL:url error:&error]) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxMetalSerializeArchive: serializeToURL failed: %s",
+            error.localizedDescription.UTF8String);
+        return NULL;
+    }
+
+    NSData* data = [NSData dataWithContentsOfURL:url options:0 error:&error];
+    [[NSFileManager defaultManager] removeItemAtURL:url error:nil];
+    if (!data) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxMetalSerializeArchive: failed to read back archive: %s",
+            error.localizedDescription.UTF8String);
+        return NULL;
+    }
+
+    uint8_t* bytecode = (uint8_t*)device->createInfo.allocate(data.length);
+    memcpy(bytecode, data.bytes, data.length);
+    *outSize = data.length;
+    return bytecode;
+}
+
+static id<MTLBinaryArchive> agfxMetalNewEmptyArchive(agfxDevice* device, const char* context) {
+    MTLBinaryArchiveDescriptor* descriptor = [MTLBinaryArchiveDescriptor new];
+    descriptor.url = nil;
+    NSError* error = nil;
+    id<MTLBinaryArchive> archive = [device->device newBinaryArchiveWithDescriptor:descriptor error:&error];
+    if (!archive) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "%s: newBinaryArchiveWithDescriptor failed: %s", context,
+            error.localizedDescription.UTF8String);
+    }
+    return archive;
+}
+
 // Render pipeline
 agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRenderPipelineCreateInfo* createInfo) {
     agfxRenderPipeline* pipeline = (agfxRenderPipeline*)device->createInfo.allocate(sizeof(agfxRenderPipeline));
@@ -1688,6 +1770,14 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
     MTLRenderPipelineDescriptor* descriptor = [MTLRenderPipelineDescriptor new];
     MTLMeshRenderPipelineDescriptor* meshDescriptor = [MTLMeshRenderPipelineDescriptor new];
     MTLDepthStencilDescriptor* depthStencilDescriptor = [MTLDepthStencilDescriptor new];
+
+    // A miss inside the archive is not fatal (no MTLPipelineOptionFailOnBinaryArchiveMiss): Metal
+    // just falls back to a full compile.
+    id<MTLBinaryArchive> archive = agfxMetalLoadArchive(device, createInfo->cache, createInfo->cacheSize);
+    if (archive) {
+        descriptor.binaryArchives = @[archive];
+        meshDescriptor.binaryArchives = @[archive];
+    }
 
     if (createInfo->meshShader) {
         // Fill meshDescriptor with mesh shader pipeline info
@@ -1717,6 +1807,7 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
             device->createInfo.free(pipeline);
             return nullptr;
         }
+        pipeline->meshDescriptor = meshDescriptor;
     } else {
         descriptor.label = [NSString stringWithUTF8String:createInfo->name];
         descriptor.vertexFunction = createInfo->vertexShader ? createInfo->vertexShader->function : nil;
@@ -1744,6 +1835,7 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
             device->createInfo.free(pipeline);
             return nullptr;
         }
+        pipeline->descriptor = descriptor;
     }
 
     if (createInfo->depthFormat != AGFX_TEXTURE_FORMAT_UNKNOWN) {
@@ -1758,7 +1850,25 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
 void agfxRenderPipelineDestroy(agfxDevice* device, agfxRenderPipeline* pipeline) {
     pipeline->pipelineState = nil;
     pipeline->depthStencilState = nil;
+    pipeline->descriptor = nil;
+    pipeline->meshDescriptor = nil;
     device->createInfo.free(pipeline);
+}
+
+uint8_t* agfxRenderPipelineGetCache(agfxDevice* device, agfxRenderPipeline* pipeline, uint64_t* outSize) {
+    id<MTLBinaryArchive> archive = agfxMetalNewEmptyArchive(device, "agfxRenderPipelineGetCache");
+    if (!archive) return NULL;
+
+    NSError* error = nil;
+    BOOL added = pipeline->meshDescriptor
+        ? [archive addMeshRenderPipelineFunctionsWithDescriptor:pipeline->meshDescriptor error:&error]
+        : [archive addRenderPipelineFunctionsWithDescriptor:pipeline->descriptor error:&error];
+    if (!added) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxRenderPipelineGetCache: failed to add pipeline functions: %s",
+            error.localizedDescription.UTF8String);
+        return NULL;
+    }
+    return agfxMetalSerializeArchive(device, archive, outSize);
 }
 
 // Compute pipeline
@@ -1771,6 +1881,9 @@ agfxComputePipeline* agfxComputePipelineCreate(agfxDevice* device, const agfxCom
     // always on. Compute PSOs are cheap enough that the blanket cost isn't worth an API change.
     descriptor.supportIndirectCommandBuffers = YES;
 
+    id<MTLBinaryArchive> archive = agfxMetalLoadArchive(device, createInfo->cache, createInfo->cacheSize);
+    if (archive) descriptor.binaryArchives = @[archive];
+
     agfxComputePipeline* pipeline = (agfxComputePipeline*)device->createInfo.allocate(sizeof(agfxComputePipeline));
     memcpy(&pipeline->createInfo, createInfo, sizeof(agfxComputePipelineCreateInfo));
     NSError* pipelineError = nil;
@@ -1781,12 +1894,27 @@ agfxComputePipeline* agfxComputePipelineCreate(agfxDevice* device, const agfxCom
         device->createInfo.free(pipeline);
         return nullptr;
     }
+    pipeline->descriptor = descriptor;
     return pipeline;
 }
 
 void agfxComputePipelineDestroy(agfxDevice* device, agfxComputePipeline* pipeline) {
     pipeline->pipelineState = nil;
+    pipeline->descriptor = nil;
     device->createInfo.free(pipeline);
+}
+
+uint8_t* agfxComputePipelineGetCache(agfxDevice* device, agfxComputePipeline* pipeline, uint64_t* outSize) {
+    id<MTLBinaryArchive> archive = agfxMetalNewEmptyArchive(device, "agfxComputePipelineGetCache");
+    if (!archive) return NULL;
+
+    NSError* error = nil;
+    if (![archive addComputePipelineFunctionsWithDescriptor:pipeline->descriptor error:&error]) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxComputePipelineGetCache: failed to add pipeline functions: %s",
+            error.localizedDescription.UTF8String);
+        return NULL;
+    }
+    return agfxMetalSerializeArchive(device, archive, outSize);
 }
 
 // Acceleration structure
@@ -1903,8 +2031,9 @@ void agfxAccelerationStructureDestroy(agfxDevice* device, agfxAccelerationStruct
 }
 
 void agfxAccelerationStructureGetSizes(agfxDevice* device, agfxAccelerationStructure* accelerationStructure, agfxAccelerationStructureSizes* sizes) {
-    sizes->scratchBufferSize = accelerationStructure->sizes.buildScratchBufferSize;
-    sizes->updateScratchBufferSize = accelerationStructure->sizes.refitScratchBufferSize;
+    static const uint64_t kMinScratchSize = 16;
+    sizes->scratchBufferSize = std::max<uint64_t>(accelerationStructure->sizes.buildScratchBufferSize, kMinScratchSize);
+    sizes->updateScratchBufferSize = std::max<uint64_t>(accelerationStructure->sizes.refitScratchBufferSize, kMinScratchSize);
 }
 
 uint64_t agfxAccelerationStructureGetHandle(agfxAccelerationStructure* accelerationStructure) {
