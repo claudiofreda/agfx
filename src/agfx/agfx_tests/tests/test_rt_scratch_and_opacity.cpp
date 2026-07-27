@@ -118,8 +118,8 @@ AGFX_TEST_TEXTURE(RTScratchBufferReuse, C, kRtWidth, kRtHeight)
         agfxComputePass* pass = agfxComputePassBegin(cmd, "build second");
         agfxComputePassBuildAccelerationStructure(pass, second.blas, scratch, 0);
         agfxComputePassEnd(pass);
-        agfxCommandBufferAccelerationStructureBarrier(
-            cmd, second.blas, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+        agfxCommandBufferMemoryBarrier(
+            cmd, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
             AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, 0);
     });
 
@@ -160,8 +160,8 @@ AGFX_TEST_TEXTURE(RTBuildWithOffsetScratchBuffer, C, kRtWidth, kRtHeight)
         agfxComputePass* pass = agfxComputePassBegin(cmd, "build at offset");
         agfxComputePassBuildAccelerationStructure(pass, blas.blas, scratch, kOffset);
         agfxComputePassEnd(pass);
-        agfxCommandBufferAccelerationStructureBarrier(
-            cmd, blas.blas, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+        agfxCommandBufferMemoryBarrier(
+            cmd, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
             AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, 0);
     });
 

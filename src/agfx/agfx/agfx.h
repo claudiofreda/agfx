@@ -353,22 +353,17 @@ void agfxCommandBufferEnd(agfxCommandBuffer* commandBuffer);
 ///        explicit barrier on Metal but still need the D3D12 transition, which happens unconditionally.
 void agfxCommandBufferTextureBarrier(agfxCommandBuffer* commandBuffer, agfxTexture* texture,  agfxResourceState oldState, agfxResourceState newState, uint32_t mip, uint32_t layer, agfxBool agglomerate);
 
-/// @brief Records a barrier transitioning the given buffer from one resource state to another.
+/// @brief Records a memory barrier ordering all prior buffer/acceleration-structure GPU access in oldState
+///        against subsequent GPU access in newState. Unlike agfxCommandBufferTextureBarrier, this is not
+///        scoped to a specific resource: buffers and acceleration structures have no layout to transition,
+///        so on D3D12 this maps to a global (memory-only) barrier that orders all matching access, and on
+///        Metal it merges into the same stage-based barrier tracker textures use.
 /// @param commandBuffer A pointer to the agfxCommandBuffer to record the barrier in.
-/// @param buffer A pointer to the agfxBuffer to transition.
-/// @param oldState The resource state the buffer is currently in.
-/// @param newState The resource state to transition the buffer to.
+/// @param oldState The resource state prior GPU access used.
+/// @param newState The resource state subsequent GPU access will use.
 /// @param agglomerate See the note on agfxCommandBufferTextureBarrier: on Metal, pass true so the barrier is
 ///        queued and flushed at the next pass boundary; D3D12 ignores this flag and always transitions immediately.
-void agfxCommandBufferBufferBarrier(agfxCommandBuffer* commandBuffer, agfxBuffer* buffer, agfxResourceState oldState, agfxResourceState newState, agfxBool agglomerate);
-
-/// @brief Records a barrier transitioning the given acceleration structure from one resource state to another.
-/// @param commandBuffer A pointer to the agfxCommandBuffer to record the barrier in.
-/// @param accelerationStructure A pointer to the agfxAccelerationStructure to transition.
-/// @param oldState The resource state the acceleration structure is currently in.
-/// @param newState The resource state to transition the acceleration structure to.
-/// @param agglomerate See the note on agfxCommandBufferTextureBarrier: on Metal, pass true so the barrier is queued and flushed at the next pass boundary; D3D12 ignores this flag and always transitions immediately.
-void agfxCommandBufferAccelerationStructureBarrier(agfxCommandBuffer* commandBuffer, agfxAccelerationStructure* accelerationStructure, agfxResourceState oldState, agfxResourceState newState, agfxBool agglomerate);
+void agfxCommandBufferMemoryBarrier(agfxCommandBuffer* commandBuffer, agfxResourceState oldState, agfxResourceState newState, agfxBool agglomerate);
 
 // Texture
 /// @brief The pixel format of a texture.
@@ -806,7 +801,7 @@ void agfxComputePassExecuteIndirectBundle(agfxComputePass* computePass, agfxIndi
 /// @param commandBuffer A pointer to the agfxCommandBuffer to begin the pass on. Cannot be a pass created on a queue used only for graphics-incompatible work.
 /// @param name A debug name for the pass, visible in graphics debuggers.
 /// @return A pointer to the newly created agfxComputePass. Must be ended with agfxComputePassEnd.
-/// @note Also flushes any pending "agglomerated" barriers recorded via agfxCommandBufferTextureBarrier/agfxCommandBufferBufferBarrier on the Metal backend.
+/// @note Also flushes any pending "agglomerated" barriers recorded via agfxCommandBufferTextureBarrier/agfxCommandBufferMemoryBarrier on the Metal backend.
 agfxComputePass* agfxComputePassBegin(agfxCommandBuffer* commandBuffer, const char* name);
 
 /// @brief Inserts an unordered-access-view (read/write hazard) barrier for the specified texture within the pass.
@@ -1237,7 +1232,7 @@ typedef struct agfxRenderPassCreateInfo {
 /// @param cmdBuffer A pointer to the agfxCommandBuffer to begin the pass on.
 /// @param createInfo A pointer to an agfxRenderPassCreateInfo structure describing the attachments and dimensions.
 /// @return A pointer to the newly created agfxRenderPass. Must be ended with agfxRenderPassEnd.
-/// @note Also flushes any pending "agglomerated" barriers recorded via agfxCommandBufferTextureBarrier/agfxCommandBufferBufferBarrier on the Metal backend.
+/// @note Also flushes any pending "agglomerated" barriers recorded via agfxCommandBufferTextureBarrier/agfxCommandBufferMemoryBarrier on the Metal backend.
 ///       Every texture used as a color or depth attachment must already be in AGFX_RESOURCE_STATE_RENDER_TARGET
 ///       or AGFX_RESOURCE_STATE_DEPTH_WRITE respectively before the pass begins.
 agfxRenderPass* agfxRenderPassBegin(agfxCommandBuffer* cmdBuffer, const agfxRenderPassCreateInfo* createInfo);

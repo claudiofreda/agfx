@@ -184,9 +184,9 @@ namespace
             constants.firstLaneIDBuffer = (uint32_t)agfxBufferViewGetHandle(firstLaneView);
 
             gpu.RecordAndSubmit([&](agfxCommandBuffer* cmd) {
-                agfxCommandBufferBufferBarrier(cmd, recordBuffer, AGFX_RESOURCE_STATE_COMMON,
+                agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                                AGFX_RESOURCE_STATE_UNORDERED_ACCESS, 0);
-                agfxCommandBufferBufferBarrier(cmd, firstLaneBuffer, AGFX_RESOURCE_STATE_COMMON,
+                agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                                AGFX_RESOURCE_STATE_UNORDERED_ACCESS, 0);
                 agfxComputePass* pass = agfxComputePassBegin(cmd, "compute wave ops");
                 agfxComputePassSetPipeline(pass, pipeline);
@@ -257,8 +257,8 @@ namespace
         constants.firstLaneIDBuffer = (uint32_t)agfxBufferViewGetHandle(firstLaneView);
 
         cmd.Begin();
-        cmd.BufferBarrier(recordBuffer, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
-        cmd.BufferBarrier(firstLaneBuffer, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
+        cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
+        cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
         {
             agfx::ComputePass pass = cmd.BeginComputePass("compute wave ops");
             pass.SetPipeline(pipeline);
@@ -328,9 +328,9 @@ namespace
             // recordBuffer/firstLaneBuffer are raw agfx::Buffer, not ez-tracked resources (ez has no
             // structured-buffer sugar), so they are barriered directly rather than through
             // Context::TransitionBuffer, which only knows about its own Buffer wrapper.
-            agfxCommandBufferBufferBarrier(context.GetCurrentCommandBuffer().Get(), recordBuffer,
+            agfxCommandBufferMemoryBarrier(context.GetCurrentCommandBuffer().Get(),
                                            AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, 0);
-            agfxCommandBufferBufferBarrier(context.GetCurrentCommandBuffer().Get(), firstLaneBuffer,
+            agfxCommandBufferMemoryBarrier(context.GetCurrentCommandBuffer().Get(),
                                            AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, 0);
 
             // ez deliberately has no compute-pass sugar; drop to the frame's raw command buffer.

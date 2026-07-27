@@ -429,21 +429,11 @@ namespace agfx
             agfxCommandBufferTextureBarrier(mHandle, texture, oldState, newState, mip, layer, agglomerate);
         }
 
-        void BufferBarrier(Buffer& buffer, agfxResourceState oldState, agfxResourceState newState, bool agglomerate = true)
+        /// @brief Memory barrier ordering prior buffer/acceleration-structure GPU access in oldState against
+        /// subsequent access in newState. Not scoped to a specific resource -- see agfxCommandBufferMemoryBarrier.
+        void MemoryBarrier(agfxResourceState oldState, agfxResourceState newState, bool agglomerate = true)
         {
-            agfxCommandBufferBufferBarrier(mHandle, buffer, oldState, newState, agglomerate);
-        }
-
-        /// @brief Overload for buffers this wrapper does not own -- notably
-        /// IndirectBundle::CommandsBuffer()/CountBuffer(), which are raw handles by design.
-        void BufferBarrier(agfxBuffer* buffer, agfxResourceState oldState, agfxResourceState newState, bool agglomerate = true)
-        {
-            agfxCommandBufferBufferBarrier(mHandle, buffer, oldState, newState, agglomerate);
-        }
-
-        void AccelerationStructureBarrier(AccelerationStructure& as, agfxResourceState oldState, agfxResourceState newState, bool agglomerate = true)
-        {
-            agfxCommandBufferAccelerationStructureBarrier(mHandle, as, oldState, newState, agglomerate);
+            agfxCommandBufferMemoryBarrier(mHandle, oldState, newState, agglomerate);
         }
 
         void WriteTimestamp(QueryPool& pool, uint32_t index) { agfxCommandBufferWriteTimestamp(mHandle, pool, index); }

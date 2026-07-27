@@ -63,8 +63,8 @@ AGFX_TEST_TEXTURE(RTUpdateBLAS, C, kRtWidth, kRtHeight)
         agfxComputePass* pass = agfxComputePassBegin(cmd, "update blas");
         agfxComputePassUpdateAccelerationStructure(pass, blas.blas, blas.blas, updateScratch, 0);
         agfxComputePassEnd(pass);
-        agfxCommandBufferAccelerationStructureBarrier(
-            cmd, blas.blas, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+        agfxCommandBufferMemoryBarrier(
+            cmd, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
             AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, 0);
     });
 
@@ -115,8 +115,8 @@ AGFX_TEST_TEXTURE(RTCompactBLAS, C, kRtWidth, kRtHeight)
         agfxComputePass* pass = agfxComputePassBegin(cmd, "compact blas");
         agfxComputePassCompactAccelerationStructure(pass, source.blas, compacted);
         agfxComputePassEnd(pass);
-        agfxCommandBufferAccelerationStructureBarrier(
-            cmd, compacted, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+        agfxCommandBufferMemoryBarrier(
+            cmd, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
             AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, 0);
     });
 
@@ -166,8 +166,8 @@ AGFX_TEST_TEXTURE(RTCopyAccelerationStructure, C, kRtWidth, kRtHeight)
         agfxComputePass* pass = agfxComputePassBegin(cmd, "copy blas");
         agfxComputePassCopyAccelerationStructure(pass, source.blas, copy);
         agfxComputePassEnd(pass);
-        agfxCommandBufferAccelerationStructureBarrier(
-            cmd, copy, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+        agfxCommandBufferMemoryBarrier(
+            cmd, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
             AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, 0);
     });
 

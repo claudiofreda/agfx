@@ -115,7 +115,7 @@ AGFX_TEST_BUFFER(CopyTextureToBuffer, C)
     gpu.RecordAndSubmit([&](agfxCommandBuffer* cmd) {
         agfxCommandBufferTextureBarrier(cmd, source, AGFX_RESOURCE_STATE_COMMON,
                                         AGFX_RESOURCE_STATE_COPY_SOURCE, 0, 0, 0);
-        agfxCommandBufferBufferBarrier(cmd, dest, AGFX_RESOURCE_STATE_COMMON,
+        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                        AGFX_RESOURCE_STATE_COPY_DEST, 0);
 
         const agfxTextureRegion region = FullRegion();
@@ -166,7 +166,7 @@ AGFX_TEST_BUFFER(CopyTextureToBuffer, Cpp)
     cmd.Begin();
     cmd.TextureBarrier(source, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_SOURCE,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, false);
-    cmd.BufferBarrier(dest, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_DEST, false);
+    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_DEST, false);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("copy texture to buffer");
         pass.CopyTextureToBuffer(source, dest, kDestOffset, FullRegion(), 0, 0, kRowBytes,

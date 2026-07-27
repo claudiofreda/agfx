@@ -33,7 +33,7 @@ namespace agfxtest
         info.free = TestFree;
         info.tempAllocate = TestAllocate;
         info.tempFree = TestFree;
-        info.enableValidation = 0;
+        info.enableValidation = false;
         return info;
     }
 
@@ -180,11 +180,11 @@ namespace agfxtest
         agfxDeviceMakeResourcesResident(device);
 
         RecordAndWait(device, queue, [&](agfxCommandBuffer* cmd) {
-            agfxCommandBufferBufferBarrier(cmd, buffer, currentState, AGFX_RESOURCE_STATE_COPY_SOURCE, 0);
+            agfxCommandBufferMemoryBarrier(cmd, currentState, AGFX_RESOURCE_STATE_COPY_SOURCE, 0);
             agfxComputePass* pass = agfxComputePassBegin(cmd, "readback buffer");
             agfxComputePassCopyBufferToBuffer(pass, buffer, staging, 0, 0, size);
             agfxComputePassEnd(pass);
-            agfxCommandBufferBufferBarrier(cmd, buffer, AGFX_RESOURCE_STATE_COPY_SOURCE, currentState, 0);
+            agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COPY_SOURCE, currentState, 0);
         });
 
         bool ok = false;
@@ -224,11 +224,11 @@ namespace agfxtest
         agfxBufferUnmap(staging);
 
         RecordAndWait(device, queue, [&](agfxCommandBuffer* cmd) {
-            agfxCommandBufferBufferBarrier(cmd, buffer, currentState, AGFX_RESOURCE_STATE_COPY_DEST, 0);
+            agfxCommandBufferMemoryBarrier(cmd, currentState, AGFX_RESOURCE_STATE_COPY_DEST, 0);
             agfxComputePass* pass = agfxComputePassBegin(cmd, "upload buffer");
             agfxComputePassCopyBufferToBuffer(pass, staging, buffer, 0, 0, size);
             agfxComputePassEnd(pass);
-            agfxCommandBufferBufferBarrier(cmd, buffer, AGFX_RESOURCE_STATE_COPY_DEST, currentState, 0);
+            agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COPY_DEST, currentState, 0);
         });
 
         agfxBufferDestroy(device, staging);

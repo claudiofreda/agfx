@@ -95,7 +95,7 @@ AGFX_TEST_BUFFER(CopyBufferToBuffer, C)
     agfxBufferUnmap(source);
 
     gpu.RecordAndSubmit([&](agfxCommandBuffer* cmd) {
-        agfxCommandBufferBufferBarrier(cmd, dest, AGFX_RESOURCE_STATE_COMMON,
+        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                        AGFX_RESOURCE_STATE_COPY_DEST, 0);
 
         agfxComputePass* pass = agfxComputePassBegin(cmd, "copy buffer to buffer");
@@ -140,7 +140,7 @@ AGFX_TEST_BUFFER(CopyBufferToBuffer, Cpp)
     }
 
     cmd.Begin();
-    cmd.BufferBarrier(dest, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_DEST, false);
+    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_DEST, false);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("copy buffer to buffer");
         pass.CopyBufferToBuffer(source, dest, 0, 0, kHalfSize);

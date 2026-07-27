@@ -383,14 +383,14 @@ namespace agfxtest
                                                         : AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
                                                     0, 0, 1);
                     if (state.kind == IndirectKind::DrawIndexed) {
-                        agfxCommandBufferBufferBarrier(cmd, vertexBuffer, AGFX_RESOURCE_STATE_COMMON,
+                        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                                        AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, 1);
-                        agfxCommandBufferBufferBarrier(cmd, indexBuffer, AGFX_RESOURCE_STATE_COMMON,
+                        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                                        AGFX_RESOURCE_STATE_INDEX_BUFFER, 1);
                     }
-                    agfxCommandBufferBufferBarrier(cmd, commandsBuffer, AGFX_RESOURCE_STATE_COMMON,
+                    agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                                    AGFX_RESOURCE_STATE_UNORDERED_ACCESS, 1);
-                    agfxCommandBufferBufferBarrier(cmd, countBuffer, AGFX_RESOURCE_STATE_COMMON,
+                    agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                                    AGFX_RESOURCE_STATE_UNORDERED_ACCESS, 1);
 
                     agfxComputePass* producePass = agfxComputePassBegin(cmd, "test indirect produce");
@@ -407,9 +407,9 @@ namespace agfxtest
                     agfxComputePassPrepareIndirectBundle(producePass, bundle, &executeInfo);
                     agfxComputePassEnd(producePass);
 
-                    agfxCommandBufferBufferBarrier(cmd, commandsBuffer, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+                    agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
                                                    AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, 1);
-                    agfxCommandBufferBufferBarrier(cmd, countBuffer, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+                    agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
                                                    AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, 1);
 
                     if (IsDrawKind(state.kind)) {
@@ -614,14 +614,14 @@ namespace agfxtest
                                                       : AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
                                AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
             if (state.kind == IndirectKind::DrawIndexed) {
-                cmd.BufferBarrier(vertexBuffer, AGFX_RESOURCE_STATE_COMMON,
+                cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON,
                                   AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, true);
-                cmd.BufferBarrier(indexBuffer, AGFX_RESOURCE_STATE_COMMON,
+                cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON,
                                   AGFX_RESOURCE_STATE_INDEX_BUFFER, true);
             }
-            cmd.BufferBarrier(commandsBuffer, AGFX_RESOURCE_STATE_COMMON,
+            cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON,
                               AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
-            cmd.BufferBarrier(countBuffer, AGFX_RESOURCE_STATE_COMMON,
+            cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON,
                               AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
             {
                 agfx::ComputePass pass = cmd.BeginComputePass("test indirect produce");
@@ -632,9 +632,9 @@ namespace agfxtest
                 pass.BufferUAVBarrier(countBuffer);
                 pass.PrepareIndirectBundle(bundle, executeInfo);
             }
-            cmd.BufferBarrier(commandsBuffer, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+            cmd.MemoryBarrier(AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
                               AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
-            cmd.BufferBarrier(countBuffer, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+            cmd.MemoryBarrier(AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
                               AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
             if (IsDrawKind(state.kind)) {
                 agfx::RenderPass pass = cmd.BeginRenderPass(PassInfo(renderTarget));

@@ -1082,15 +1082,7 @@ void agfxCommandBufferTextureBarrier(agfxCommandBuffer* commandBuffer, agfxTextu
     }
 }
 
-void agfxCommandBufferBufferBarrier(agfxCommandBuffer* commandBuffer, agfxBuffer* buffer, agfxResourceState oldState, agfxResourceState newState, agfxBool agglomerate) {
-    if (!agglomerate) return;
-    commandBuffer->barrierTracker.addBarrier(oldState, newState);
-    if (commandBuffer->currentEncoder) {
-        commandBuffer->barrierTracker.encodeInline(commandBuffer->currentEncoder, commandBuffer->currentEncoderStages);
-    }
-}
-
-void agfxCommandBufferAccelerationStructureBarrier(agfxCommandBuffer* commandBuffer, agfxAccelerationStructure* accelerationStructure, agfxResourceState oldState, agfxResourceState newState, agfxBool agglomerate) {
+void agfxCommandBufferMemoryBarrier(agfxCommandBuffer* commandBuffer, agfxResourceState oldState, agfxResourceState newState, agfxBool agglomerate) {
     if (!agglomerate) return;
     commandBuffer->barrierTracker.addBarrier(oldState, newState);
     if (commandBuffer->currentEncoder) {

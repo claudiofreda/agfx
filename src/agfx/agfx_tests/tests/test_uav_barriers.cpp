@@ -166,7 +166,7 @@ namespace
             constants.rwTexture = (uint32_t)agfxTextureViewGetHandle(textureView);
 
             gpu.RecordAndSubmit([&](agfxCommandBuffer* cmd) {
-                agfxCommandBufferBufferBarrier(cmd, buffer, AGFX_RESOURCE_STATE_COMMON,
+                agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                                AGFX_RESOURCE_STATE_UNORDERED_ACCESS, 1);
                 agfxCommandBufferTextureBarrier(cmd, texture, AGFX_RESOURCE_STATE_COMMON,
                                                 AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -261,7 +261,7 @@ namespace
         constants.rwTexture = (uint32_t)agfxTextureViewGetHandle(textureView);
 
         cmd.Begin();
-        cmd.BufferBarrier(buffer, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
+        cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
         cmd.TextureBarrier(texture, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
                            AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
         {

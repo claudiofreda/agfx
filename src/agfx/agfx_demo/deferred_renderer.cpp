@@ -774,15 +774,15 @@ void DeferredRenderer::CullGBuffer(agfxDevice* device, agfxCommandBuffer* cmdBuf
     // The bundle is shared by every frame in flight, so the previous frame's GBuffer draws may still
     // be reading these buffers when this frame's culling pass starts overwriting them. Order the
     // writes after those reads before touching anything.
-    agfxCommandBufferBufferBarrier(cmdBuffer, commandsBuffer, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
-    agfxCommandBufferBufferBarrier(cmdBuffer, countBuffer, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, AGFX_RESOURCE_STATE_COPY_DEST, true);
+    agfxCommandBufferMemoryBarrier(cmdBuffer, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
+    agfxCommandBufferMemoryBarrier(cmdBuffer, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, AGFX_RESOURCE_STATE_COPY_DEST, true);
 
     agfxComputePass* pass = agfxComputePassBegin(cmdBuffer, "GBuffer Culling");
 
     agfxComputePassCopyBufferToBuffer(pass, indirectCountResetBuffer, countBuffer, 0, 0, sizeof(uint32_t));
     // The copy implicitly promotes countBuffer to COPY_DEST; the culling shader's atomic
     // appends need it as a UAV, so this has to be a real state transition, not just a UAV barrier.
-    agfxCommandBufferBufferBarrier(cmdBuffer, countBuffer, AGFX_RESOURCE_STATE_COPY_DEST, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
+    agfxCommandBufferMemoryBarrier(cmdBuffer, AGFX_RESOURCE_STATE_COPY_DEST, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
 
     culling->Cull(pass, scene.gpuSceneBufferView, indirectPrimitiveCount, frustumPlanes, agfxIndirectBundleGetHandle(gbufferIndirectBundle));
 
@@ -805,8 +805,8 @@ void DeferredRenderer::CullGBuffer(agfxDevice* device, agfxCommandBuffer* cmdBuf
 
     agfxComputePassEnd(pass);
 
-    agfxCommandBufferBufferBarrier(cmdBuffer, commandsBuffer, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
-    agfxCommandBufferBufferBarrier(cmdBuffer, countBuffer, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
+    agfxCommandBufferMemoryBarrier(cmdBuffer, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
+    agfxCommandBufferMemoryBarrier(cmdBuffer, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
 }
 
 void DeferredRenderer::RenderGBuffer(agfxDevice* device, agfxCommandBuffer* cmdBuffer, const GltfScene& scene, const Camera& camera, uint32_t frameSlot)

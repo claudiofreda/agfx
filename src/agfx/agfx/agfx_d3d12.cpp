@@ -21,7 +21,9 @@
 DXGI_FORMAT agfxTextureFormatToDXGIFormat(agfxTextureFormat format);
 D3D12_RESOURCE_DIMENSION agfxTextureTypeToD3D12ResourceDimension(agfxTextureType type);
 D3D12_COMMAND_LIST_TYPE agfxCommandQueueTypeToD3D12CommandListType(agfxCommandQueueType type);
-D3D12_RESOURCE_STATES agfxResourceStateToD3D12ResourceStates(agfxResourceState state);
+D3D12_BARRIER_SYNC agfxResourceStateToD3D12BarrierSync(agfxResourceState state);
+D3D12_BARRIER_ACCESS agfxResourceStateToD3D12BarrierAccess(agfxResourceState state);
+D3D12_BARRIER_LAYOUT agfxResourceStateToD3D12BarrierLayout(agfxResourceState state);
 D3D12_RESOURCE_FLAGS agfxTextureUsageToD3D12ResourceFlags(agfxTextureUsage usage);
 D3D12_RESOURCE_FLAGS agfxBufferUsageToD3D12ResourceFlags(agfxBufferUsage usage);
 D3D12_HEAP_TYPE agfxBufferMemoryTypeToD3D12HeapType(agfxBufferMemoryType memoryType);
@@ -371,6 +373,19 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
 
     if (FAILED(D3D12CreateDevice(device->dxgiAdapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&device->d3d12Device)))) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxDeviceCreate: D3D12CreateDevice failed");
+        device->dxgiAdapter->Release();
+        device->dxgiFactory->Release();
+        createInfo->free(device);
+        return NULL;
+    }
+
+    // AGFX's D3D12 backend uses Enhanced Barriers exclusively (no legacy ResourceBarrier fallback),
+    // so a device that can't report support is unusable here.
+    D3D12_FEATURE_DATA_D3D12_OPTIONS12 options12 = {};
+    if (FAILED(device->d3d12Device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &options12, sizeof(options12))) ||
+        !options12.EnhancedBarriersSupported) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxDeviceCreate: adapter does not support D3D12 Enhanced Barriers");
+        device->d3d12Device->Release();
         device->dxgiAdapter->Release();
         device->dxgiFactory->Release();
         createInfo->free(device);
@@ -787,67 +802,52 @@ void agfxCommandBufferEnd(agfxCommandBuffer* commandBuffer) {
 }
 
 void agfxCommandBufferTextureBarrier(agfxCommandBuffer* commandBuffer, agfxTexture* texture,  agfxResourceState oldState, agfxResourceState newState, uint32_t mip, uint32_t layer, agfxBool agglomerate) {
-    D3D12_RESOURCE_BARRIER barrier = {};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Transition.pResource = texture->d3d12Resource;
-    barrier.Transition.StateBefore = agfxResourceStateToD3D12ResourceStates(oldState);
-    barrier.Transition.StateAfter = agfxResourceStateToD3D12ResourceStates(newState);
-    barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-
     bool allMips = (mip == (uint32_t)AGFX_SUBRESOURCE_ALL_MIPS);
     bool allLayers = (layer == (uint32_t)AGFX_SUBRESOURCE_ALL_LAYERS);
+
+    CD3DX12_BARRIER_SUBRESOURCE_RANGE range(0xffffffff);
     if (allMips && allLayers) {
-        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        commandBuffer->d3d12CommandList->ResourceBarrier(1, &barrier);
+        range = CD3DX12_BARRIER_SUBRESOURCE_RANGE(0xffffffff);
     } else if (!allMips && !allLayers) {
-        barrier.Transition.Subresource = D3D12CalcSubresource(mip, layer, 0, texture->createInfo.mipLevels, texture->createInfo.depthOrArrayLayers);
-        commandBuffer->d3d12CommandList->ResourceBarrier(1, &barrier);
+        range = CD3DX12_BARRIER_SUBRESOURCE_RANGE(D3D12CalcSubresource(mip, layer, 0, texture->createInfo.mipLevels, texture->createInfo.depthOrArrayLayers));
+    } else if (allMips) {
+        // All mips at one layer.
+        range = CD3DX12_BARRIER_SUBRESOURCE_RANGE(0, texture->createInfo.mipLevels, layer, 1);
     } else {
-        // Mixed single-axis sentinel (all mips at one layer, or all layers at one mip):
-        // loop and issue one barrier per subresource on the "ALL" axis.
-        uint32_t mipStart = allMips ? 0 : mip, mipEnd = allMips ? texture->createInfo.mipLevels : mip + 1;
-        uint32_t layerStart = allLayers ? 0 : layer, layerEnd = allLayers ? texture->createInfo.depthOrArrayLayers : layer + 1;
-        for (uint32_t l = layerStart; l < layerEnd; l++) {
-            for (uint32_t m = mipStart; m < mipEnd; m++) {
-                D3D12_RESOURCE_BARRIER sub = barrier;
-                sub.Transition.Subresource = D3D12CalcSubresource(m, l, 0, texture->createInfo.mipLevels, texture->createInfo.depthOrArrayLayers);
-                commandBuffer->d3d12CommandList->ResourceBarrier(1, &sub);
-            }
-        }
-    }
-}
-
-void agfxCommandBufferBufferBarrier(agfxCommandBuffer* commandBuffer, agfxBuffer* buffer, agfxResourceState oldState, agfxResourceState newState, agfxBool agglomerate) {
-    D3D12_RESOURCE_BARRIER barrier = {};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Transition.pResource = buffer->d3d12Resource;
-    barrier.Transition.StateBefore = agfxResourceStateToD3D12ResourceStates(oldState);
-    barrier.Transition.StateAfter = agfxResourceStateToD3D12ResourceStates(newState);
-    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-
-    commandBuffer->d3d12CommandList->ResourceBarrier(1, &barrier);
-}
-
-void agfxCommandBufferAccelerationStructureBarrier(agfxCommandBuffer* commandBuffer, agfxAccelerationStructure* accelerationStructure, agfxResourceState oldState, agfxResourceState newState, agfxBool agglomerate) {
-    D3D12_RESOURCE_BARRIER barrier = {};
-
-    // AS resources live permanently in RAYTRACING_ACCELERATION_STRUCTURE state; ordering builds/reads
-    // against each other (e.g. BLAS build -> TLAS build) is a same-state wait, which D3D12 expresses
-    // as a UAV barrier, not a state transition (D3D12 rejects a transition whose before/after states match).
-    if (oldState == newState) {
-        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-        barrier.UAV.pResource = accelerationStructure->d3d12Resource;
-    } else {
-        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        barrier.Transition.pResource = accelerationStructure->d3d12Resource;
-        barrier.Transition.StateBefore = agfxResourceStateToD3D12ResourceStates(oldState);
-        barrier.Transition.StateAfter = agfxResourceStateToD3D12ResourceStates(newState);
-        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+        // All layers at one mip.
+        range = CD3DX12_BARRIER_SUBRESOURCE_RANGE(mip, 1, 0, texture->createInfo.depthOrArrayLayers);
     }
 
-    commandBuffer->d3d12CommandList->ResourceBarrier(1, &barrier);
+    CD3DX12_TEXTURE_BARRIER textureBarrier(
+        agfxResourceStateToD3D12BarrierSync(oldState), agfxResourceStateToD3D12BarrierSync(newState),
+        agfxResourceStateToD3D12BarrierAccess(oldState), agfxResourceStateToD3D12BarrierAccess(newState),
+        agfxResourceStateToD3D12BarrierLayout(oldState), agfxResourceStateToD3D12BarrierLayout(newState),
+        texture->d3d12Resource, range);
+
+    CD3DX12_BARRIER_GROUP group(1, &textureBarrier);
+    commandBuffer->d3d12CommandList->Barrier(1, &group);
+}
+
+void agfxCommandBufferMemoryBarrier(agfxCommandBuffer* commandBuffer, agfxResourceState oldState, agfxResourceState newState, agfxBool agglomerate) {
+    // Buffers and acceleration structures have no layout to transition under enhanced barriers, so this
+    // is a global (memory-only) barrier rather than one scoped to a specific resource -- see notes/BARRIER_REWORK.md.
+    D3D12_BARRIER_ACCESS accessBefore = agfxResourceStateToD3D12BarrierAccess(oldState);
+    D3D12_BARRIER_ACCESS accessAfter = agfxResourceStateToD3D12BarrierAccess(newState);
+
+    // D3D12 rejects a global barrier whose AccessBefore is COMMON and AccessAfter is not (unlike
+    // buffer/texture barriers, which allow that transition freely). COMMON already implies full
+    // visibility with nothing pending, so the Sync scope below still enforces the GPU wait -- clamping
+    // Access here loses no real synchronization, just satisfies the enhanced-barrier validation rule.
+    if (accessBefore == D3D12_BARRIER_ACCESS_COMMON) {
+        accessAfter = D3D12_BARRIER_ACCESS_COMMON;
+    }
+
+    CD3DX12_GLOBAL_BARRIER globalBarrier(
+        agfxResourceStateToD3D12BarrierSync(oldState), agfxResourceStateToD3D12BarrierSync(newState),
+        accessBefore, accessAfter);
+
+    CD3DX12_BARRIER_GROUP group(1, &globalBarrier);
+    commandBuffer->d3d12CommandList->Barrier(1, &group);
 }
 
 // Texture
@@ -1820,17 +1820,26 @@ agfxComputePass* agfxComputePassBegin(agfxCommandBuffer* commandBuffer, const ch
 }
 
 void agfxComputePassTextureUAVBarrier(agfxComputePass* computePass, agfxTexture* texture) {
-    D3D12_RESOURCE_BARRIER barrier = {};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-    barrier.UAV.pResource = texture->d3d12Resource;
-    computePass->commandBuffer->d3d12CommandList->ResourceBarrier(1, &barrier);
+    // Same-layout hazard barrier (read/write ordering between two dispatches), not a state change --
+    // the enhanced-barrier equivalent of the legacy D3D12_RESOURCE_BARRIER_TYPE_UAV.
+    CD3DX12_TEXTURE_BARRIER textureBarrier(
+        D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_SYNC_COMPUTE_SHADING,
+        D3D12_BARRIER_ACCESS_UNORDERED_ACCESS, D3D12_BARRIER_ACCESS_UNORDERED_ACCESS,
+        D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS, D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS,
+        texture->d3d12Resource, CD3DX12_BARRIER_SUBRESOURCE_RANGE(0xffffffff));
+
+    CD3DX12_BARRIER_GROUP group(1, &textureBarrier);
+    computePass->commandBuffer->d3d12CommandList->Barrier(1, &group);
 }
 
 void agfxComputePassBufferUAVBarrier(agfxComputePass* computePass, agfxBuffer* buffer) {
-    D3D12_RESOURCE_BARRIER barrier = {};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-    barrier.UAV.pResource = buffer->d3d12Resource;
-    computePass->commandBuffer->d3d12CommandList->ResourceBarrier(1, &barrier);
+    CD3DX12_BUFFER_BARRIER bufferBarrier(
+        D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_SYNC_COMPUTE_SHADING,
+        D3D12_BARRIER_ACCESS_UNORDERED_ACCESS, D3D12_BARRIER_ACCESS_UNORDERED_ACCESS,
+        buffer->d3d12Resource);
+
+    CD3DX12_BARRIER_GROUP group(1, &bufferBarrier);
+    computePass->commandBuffer->d3d12CommandList->Barrier(1, &group);
 }
 
 void agfxComputePassBuildAccelerationStructure(agfxComputePass* computePass, agfxAccelerationStructure* accelerationStructure, agfxBuffer* scratchBuffer, uint64_t scratchBufferOffset) {
@@ -2533,41 +2542,114 @@ D3D12_COMMAND_LIST_TYPE agfxCommandQueueTypeToD3D12CommandListType(agfxCommandQu
     }
 }
 
-D3D12_RESOURCE_STATES agfxResourceStateToD3D12ResourceStates(agfxResourceState state) {
+// The following three tables are the enhanced-barrier equivalent of the old single legacy-state
+// mapping, split along the three independent axes enhanced barriers require (sync scope, access,
+// and -- textures only -- layout). Sync is intentionally picked as the broadest scope that's still
+// tied to the state's name (e.g. NON_PIXEL_SHADING for NON_PIXEL_SHADER_RESOURCE) rather than a
+// precise single pipeline stage: agfxResourceState carries no stage information from the caller
+// (matching the legacy D3D12 states this mirrors), so there's nothing narrower to derive from.
+D3D12_BARRIER_SYNC agfxResourceStateToD3D12BarrierSync(agfxResourceState state) {
     switch (state) {
         case AGFX_RESOURCE_STATE_COMMON:
-            return D3D12_RESOURCE_STATE_COMMON;
+            return D3D12_BARRIER_SYNC_ALL;
         case AGFX_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER:
-            return D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+            return D3D12_BARRIER_SYNC_ALL_SHADING;
         case AGFX_RESOURCE_STATE_INDEX_BUFFER:
-            return D3D12_RESOURCE_STATE_INDEX_BUFFER;
+            return D3D12_BARRIER_SYNC_INDEX_INPUT;
         case AGFX_RESOURCE_STATE_RENDER_TARGET:
-            return D3D12_RESOURCE_STATE_RENDER_TARGET;
+            return D3D12_BARRIER_SYNC_RENDER_TARGET;
         case AGFX_RESOURCE_STATE_UNORDERED_ACCESS:
-            return D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            return D3D12_BARRIER_SYNC_ALL_SHADING;
         case AGFX_RESOURCE_STATE_DEPTH_WRITE:
-            return D3D12_RESOURCE_STATE_DEPTH_WRITE;
         case AGFX_RESOURCE_STATE_DEPTH_READ:
-            return D3D12_RESOURCE_STATE_DEPTH_READ;
+            return D3D12_BARRIER_SYNC_DEPTH_STENCIL;
         case AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE:
-            return D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            return D3D12_BARRIER_SYNC_NON_PIXEL_SHADING;
         case AGFX_RESOURCE_STATE_PIXEL_SHADER_RESOURCE:
-            return D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+            return D3D12_BARRIER_SYNC_PIXEL_SHADING;
         case AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT:
-            return D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
+            return D3D12_BARRIER_SYNC_EXECUTE_INDIRECT;
         case AGFX_RESOURCE_STATE_COPY_DEST:
-            return D3D12_RESOURCE_STATE_COPY_DEST;
         case AGFX_RESOURCE_STATE_COPY_SOURCE:
-            return D3D12_RESOURCE_STATE_COPY_SOURCE;
+            return D3D12_BARRIER_SYNC_COPY;
         case AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE:
-            return D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
+            return D3D12_BARRIER_SYNC_RAYTRACING | D3D12_BARRIER_SYNC_BUILD_RAYTRACING_ACCELERATION_STRUCTURE | D3D12_BARRIER_SYNC_COPY_RAYTRACING_ACCELERATION_STRUCTURE;
         case AGFX_RESOURCE_STATE_GENERIC_READ:
-            return D3D12_RESOURCE_STATE_GENERIC_READ;
+            return D3D12_BARRIER_SYNC_ALL_SHADING | D3D12_BARRIER_SYNC_INDEX_INPUT | D3D12_BARRIER_SYNC_EXECUTE_INDIRECT | D3D12_BARRIER_SYNC_COPY;
         case AGFX_RESOURCE_STATE_ALL_SHADER_RESOURCE:
-            return D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE;
+            return D3D12_BARRIER_SYNC_ALL_SHADING;
         case AGFX_RESOURCE_STATE_PRESENT:
-            return D3D12_RESOURCE_STATE_PRESENT;
+            return D3D12_BARRIER_SYNC_ALL;
         default:
-            return D3D12_RESOURCE_STATE_COMMON; // Default to common if unknown
+            return D3D12_BARRIER_SYNC_ALL;
+    }
+}
+
+D3D12_BARRIER_ACCESS agfxResourceStateToD3D12BarrierAccess(agfxResourceState state) {
+    switch (state) {
+        case AGFX_RESOURCE_STATE_COMMON:
+            return D3D12_BARRIER_ACCESS_COMMON;
+        case AGFX_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER:
+            return D3D12_BARRIER_ACCESS_VERTEX_BUFFER | D3D12_BARRIER_ACCESS_CONSTANT_BUFFER;
+        case AGFX_RESOURCE_STATE_INDEX_BUFFER:
+            return D3D12_BARRIER_ACCESS_INDEX_BUFFER;
+        case AGFX_RESOURCE_STATE_RENDER_TARGET:
+            return D3D12_BARRIER_ACCESS_RENDER_TARGET;
+        case AGFX_RESOURCE_STATE_UNORDERED_ACCESS:
+            return D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
+        case AGFX_RESOURCE_STATE_DEPTH_WRITE:
+            return D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE;
+        case AGFX_RESOURCE_STATE_DEPTH_READ:
+            return D3D12_BARRIER_ACCESS_DEPTH_STENCIL_READ;
+        case AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE:
+        case AGFX_RESOURCE_STATE_PIXEL_SHADER_RESOURCE:
+        case AGFX_RESOURCE_STATE_ALL_SHADER_RESOURCE:
+            return D3D12_BARRIER_ACCESS_SHADER_RESOURCE;
+        case AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT:
+            return D3D12_BARRIER_ACCESS_INDIRECT_ARGUMENT;
+        case AGFX_RESOURCE_STATE_COPY_DEST:
+            return D3D12_BARRIER_ACCESS_COPY_DEST;
+        case AGFX_RESOURCE_STATE_COPY_SOURCE:
+            return D3D12_BARRIER_ACCESS_COPY_SOURCE;
+        case AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE:
+            return D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_READ | D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_WRITE;
+        case AGFX_RESOURCE_STATE_GENERIC_READ:
+            return D3D12_BARRIER_ACCESS_VERTEX_BUFFER | D3D12_BARRIER_ACCESS_CONSTANT_BUFFER | D3D12_BARRIER_ACCESS_INDEX_BUFFER |
+                   D3D12_BARRIER_ACCESS_SHADER_RESOURCE | D3D12_BARRIER_ACCESS_INDIRECT_ARGUMENT | D3D12_BARRIER_ACCESS_COPY_SOURCE;
+        case AGFX_RESOURCE_STATE_PRESENT:
+            return D3D12_BARRIER_ACCESS_COMMON;
+        default:
+            return D3D12_BARRIER_ACCESS_COMMON;
+    }
+}
+
+// Layout is meaningful only for textures -- buffers and acceleration structures are barriered via
+// agfxCommandBufferMemoryBarrier (a global barrier), which has no layout concept at all.
+D3D12_BARRIER_LAYOUT agfxResourceStateToD3D12BarrierLayout(agfxResourceState state) {
+    switch (state) {
+        case AGFX_RESOURCE_STATE_COMMON:
+            return D3D12_BARRIER_LAYOUT_COMMON;
+        case AGFX_RESOURCE_STATE_RENDER_TARGET:
+            return D3D12_BARRIER_LAYOUT_RENDER_TARGET;
+        case AGFX_RESOURCE_STATE_UNORDERED_ACCESS:
+            return D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS;
+        case AGFX_RESOURCE_STATE_DEPTH_WRITE:
+            return D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE;
+        case AGFX_RESOURCE_STATE_DEPTH_READ:
+            return D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_READ;
+        case AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE:
+        case AGFX_RESOURCE_STATE_PIXEL_SHADER_RESOURCE:
+        case AGFX_RESOURCE_STATE_ALL_SHADER_RESOURCE:
+            return D3D12_BARRIER_LAYOUT_SHADER_RESOURCE;
+        case AGFX_RESOURCE_STATE_COPY_DEST:
+            return D3D12_BARRIER_LAYOUT_COPY_DEST;
+        case AGFX_RESOURCE_STATE_COPY_SOURCE:
+            return D3D12_BARRIER_LAYOUT_COPY_SOURCE;
+        case AGFX_RESOURCE_STATE_GENERIC_READ:
+            return D3D12_BARRIER_LAYOUT_GENERIC_READ;
+        case AGFX_RESOURCE_STATE_PRESENT:
+            return D3D12_BARRIER_LAYOUT_PRESENT;
+        default:
+            return D3D12_BARRIER_LAYOUT_COMMON;
     }
 }

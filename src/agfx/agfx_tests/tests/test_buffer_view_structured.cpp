@@ -118,7 +118,7 @@ AGFX_TEST_BUFFER(BufferViewStructured, C)
     agfxDeviceMakeResourcesResident(device);
 
     gpu.RecordAndSubmit([&](agfxCommandBuffer* cmd) {
-        agfxCommandBufferBufferBarrier(cmd, buffer, AGFX_RESOURCE_STATE_COMMON,
+        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                        AGFX_RESOURCE_STATE_UNORDERED_ACCESS, 0);
 
         agfxComputePass* pass = agfxComputePassBegin(cmd, "structured");
@@ -202,7 +202,7 @@ AGFX_TEST_BUFFER(BufferViewStructured, Cpp)
     device.MakeResourcesResident();
 
     cmd.Begin();
-    cmd.BufferBarrier(buffer, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
+    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("structured");
         pass.SetPipeline(writePipeline);

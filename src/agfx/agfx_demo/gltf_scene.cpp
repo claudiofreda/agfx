@@ -543,7 +543,7 @@ bool GltfScene::Load(agfxDevice* device, agfxCommandQueue* queue, const char* pa
         // BLAS. Emit a real AS->AS barrier (producer stage MTLStageAccelerationStructure)
         // so each build serializes against the next; a COMMON source is dropped by the
         // barrier tracker (producer stage 0) and leaves the builds racing -> GPU hang.
-        agfxCommandBufferAccelerationStructureBarrier(asCmdBuffer, b, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, true);
+        agfxCommandBufferMemoryBarrier(asCmdBuffer, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, true);
     }
 
     std::vector<agfxAccelerationStructureInstance> instances(primitives.size());
@@ -561,7 +561,7 @@ bool GltfScene::Load(agfxDevice* device, agfxCommandQueue* queue, const char* pa
         agfxComputePassBuildAccelerationStructure(pass, tlas, scratchBuffer, 0);
         agfxComputePassEnd(pass);
     }
-    agfxCommandBufferAccelerationStructureBarrier(asCmdBuffer, tlas, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, true);
+    agfxCommandBufferMemoryBarrier(asCmdBuffer, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, true);
 
     agfxCommandBufferEnd(asCmdBuffer);
     agfxCommandQueueSubmit(queue, &asCmdBuffer, 1);

@@ -1475,22 +1475,19 @@ namespace agfx::ez
             if (buf.State() == newState) {
                 return;
             }
-            mCommandBuffers[mFrameSlot].BufferBarrier(buf.Raw(), buf.State(), newState, true);
+            mCommandBuffers[mFrameSlot].MemoryBarrier(buf.State(), newState, true);
             buf.SetState(newState);
         }
 
         /// @brief Transitions both the commands and count buffers of an indirect bundle together --
         /// they always move in lockstep (UAV while being culled/prepared, INDIRECT_ARGUMENT while
-        /// being replayed). Uses the raw C API directly since the bundle owns these buffers itself
-        /// (see agfx::IndirectBundle::CommandsBuffer/CountBuffer).
+        /// being replayed). A single memory barrier covers both: it isn't scoped to either buffer.
         void TransitionIndirectBundle(IndirectBundle& bundle, agfxResourceState newState)
         {
             if (bundle.State() == newState) {
                 return;
             }
-            agfxCommandBuffer* cmd = mCommandBuffers[mFrameSlot].Get();
-            agfxCommandBufferBufferBarrier(cmd, bundle.Raw().CommandsBuffer(), bundle.State(), newState, true);
-            agfxCommandBufferBufferBarrier(cmd, bundle.Raw().CountBuffer(), bundle.State(), newState, true);
+            agfxCommandBufferMemoryBarrier(mCommandBuffers[mFrameSlot].Get(), bundle.State(), newState, true);
             bundle.SetState(newState);
         }
 
@@ -1643,8 +1640,8 @@ namespace agfx::ez
             }
             // AS->AS barrier: producer/consumer both MTLStageAccelerationStructure, so consumers of this
             // structure (further builds, or the trace) see a completed build. A COMMON source is dropped.
-            cmd.AccelerationStructureBarrier(as, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
-                                             AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, true);
+            cmd.MemoryBarrier(AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+                               AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, true);
             cmd.End();
 
             mQueue.Submit(cmd);

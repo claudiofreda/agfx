@@ -202,8 +202,8 @@ namespace agfxtest
             agfxComputePassEnd(pass);
             // The trace dispatch reads the AS as a shader resource; without this the read can race
             // the build on both backends.
-            agfxCommandBufferAccelerationStructureBarrier(
-                cmd, as, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+            agfxCommandBufferMemoryBarrier(
+            cmd, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
                 AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, 0);
         });
 

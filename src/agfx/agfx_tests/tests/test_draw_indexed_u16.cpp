@@ -180,9 +180,9 @@ AGFX_TEST_TEXTURE(DrawIndexedU16, C, kWidth, kHeight)
     gpu.RecordAndSubmit([&](agfxCommandBuffer* cmd) {
         agfxCommandBufferTextureBarrier(cmd, target, AGFX_RESOURCE_STATE_COMMON,
                                         AGFX_RESOURCE_STATE_RENDER_TARGET, 0, 0, 1);
-        agfxCommandBufferBufferBarrier(cmd, vertexBuffer, AGFX_RESOURCE_STATE_COMMON,
+        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                        AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, 1);
-        agfxCommandBufferBufferBarrier(cmd, indexBuffer, AGFX_RESOURCE_STATE_COMMON,
+        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                        AGFX_RESOURCE_STATE_INDEX_BUFFER, 1);
 
         const agfxRenderPassCreateInfo passInfo = PassInfo(renderTarget);
@@ -269,9 +269,9 @@ AGFX_TEST_TEXTURE(DrawIndexedU16, Cpp, kWidth, kHeight)
     cmd.Begin();
     cmd.TextureBarrier(target, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_RENDER_TARGET,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
-    cmd.BufferBarrier(vertexBuffer, AGFX_RESOURCE_STATE_COMMON,
+    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON,
                       AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, true);
-    cmd.BufferBarrier(indexBuffer, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_INDEX_BUFFER, true);
+    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_INDEX_BUFFER, true);
     {
         agfx::RenderPass pass = cmd.BeginRenderPass(PassInfo(renderTarget));
         pass.SetViewport(0.0f, 0.0f, (float)kWidth, (float)kHeight);

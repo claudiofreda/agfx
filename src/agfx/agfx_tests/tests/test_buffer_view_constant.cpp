@@ -155,7 +155,7 @@ AGFX_TEST_BUFFER(BufferViewConstant, C)
     agfxDeviceMakeResourcesResident(device);
 
     gpu.RecordAndSubmit([&](agfxCommandBuffer* cmd) {
-        agfxCommandBufferBufferBarrier(cmd, output, AGFX_RESOURCE_STATE_COMMON,
+        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                        AGFX_RESOURCE_STATE_UNORDERED_ACCESS, 0);
 
         agfxComputePass* pass = agfxComputePassBegin(cmd, "constant buffer view");
@@ -237,7 +237,7 @@ AGFX_TEST_BUFFER(BufferViewConstant, Cpp)
     device.MakeResourcesResident();
 
     cmd.Begin();
-    cmd.BufferBarrier(output, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
+    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("constant buffer view");
         pass.SetPipeline(pipeline);

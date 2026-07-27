@@ -83,7 +83,7 @@ AGFX_TEST_BUFFER(PipelineCacheCompute, C)
     constantsA.value = kValueA;
 
     gpu.RecordAndSubmit([&](agfxCommandBuffer* cmd) {
-        agfxCommandBufferBufferBarrier(cmd, buffer, AGFX_RESOURCE_STATE_COMMON,
+        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                        AGFX_RESOURCE_STATE_UNORDERED_ACCESS, 0);
         agfxComputePass* pass = agfxComputePassBegin(cmd, "pipeline cache compute a");
         agfxComputePassSetPipeline(pass, pipelineA);
@@ -168,7 +168,7 @@ AGFX_TEST_BUFFER(PipelineCacheCompute, Cpp)
     constantsA.value = kValueA;
 
     cmd.Begin();
-    cmd.BufferBarrier(buffer, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
+    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("pipeline cache compute a");
         pass.SetPipeline(pipelineA);

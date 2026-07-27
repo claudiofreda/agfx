@@ -127,7 +127,7 @@ AGFX_TEST_TEXTURE(CopyBufferToTextureMip, C, kMipWidth, kMipHeight)
                            AGFX_RESOURCE_STATE_COMMON);
 
     gpu.RecordAndSubmit([&](agfxCommandBuffer* cmd) {
-        agfxCommandBufferBufferBarrier(cmd, source, AGFX_RESOURCE_STATE_COMMON,
+        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON,
                                        AGFX_RESOURCE_STATE_COPY_SOURCE, 0);
         agfxCommandBufferTextureBarrier(cmd, dest, AGFX_RESOURCE_STATE_COMMON,
                                         AGFX_RESOURCE_STATE_COPY_DEST, kCopyMip, 0, 0);
@@ -188,7 +188,7 @@ AGFX_TEST_TEXTURE(CopyBufferToTextureMip, Cpp, kMipWidth, kMipHeight)
                     "failed to seed the source buffer");
 
     cmd.Begin();
-    cmd.BufferBarrier(source, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_SOURCE, false);
+    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_SOURCE, false);
     cmd.TextureBarrier(dest, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_DEST, kCopyMip,
                        AGFX_SUBRESOURCE_ALL_LAYERS, false);
     {
