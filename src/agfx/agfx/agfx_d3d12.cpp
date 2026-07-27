@@ -17,6 +17,11 @@
 #include "d3dx12/d3d12.h"
 #include "d3dx12/d3dx12.h"
 
+// The Agility SDK headers above are the ones that must win, so opt out of agfx_native.h's own.
+#define AGFX_EXPOSE_D3D12
+#define AGFX_NATIVE_NO_INCLUDES
+#include "agfx_native.h"
+
 #ifdef ENABLE_PIX
     #include "WinPixEventRuntime/pix3.h"
 #endif
@@ -2841,4 +2846,47 @@ D3D12_BARRIER_LAYOUT agfxResourceStateToD3D12BarrierLayout(agfxResourceState sta
         default:
             return D3D12_BARRIER_LAYOUT_COMMON;
     }
+}
+
+// Native interop
+//
+// Unwraps AGFX objects into the D3D12/DXGI objects they wrap, for third-party libraries that speak
+// D3D12 directly (DLSS, FSR, XeSS). These are compiled unconditionally -- AGFX_EXPOSE_D3D12 gates
+// only whether a consumer's translation unit sees the declarations. See agfx_native.h for the
+// ownership and resource-state rules that come with every one of these.
+
+ID3D12Device7* agfxNativeGetD3D12Device(agfxDevice* device) {
+    return device->d3d12Device;
+}
+
+IDXGIAdapter4* agfxNativeGetDXGIAdapter(agfxDevice* device) {
+    return device->dxgiAdapter;
+}
+
+ID3D12CommandQueue* agfxNativeGetD3D12CommandQueue(agfxCommandQueue* queue) {
+    return queue->d3d12CommandQueue;
+}
+
+ID3D12GraphicsCommandList10* agfxNativeGetD3D12CommandList(agfxCommandBuffer* commandBuffer) {
+    return commandBuffer->d3d12CommandList;
+}
+
+ID3D12Resource* agfxNativeGetD3D12TextureResource(agfxTexture* texture) {
+    return texture->d3d12Resource;
+}
+
+ID3D12Resource* agfxNativeGetD3D12BufferResource(agfxBuffer* buffer) {
+    return buffer->d3d12Resource;
+}
+
+ID3D12Heap* agfxNativeGetD3D12Heap(agfxHeap* heap) {
+    return heap->d3d12Heap;
+}
+
+ID3D12Fence* agfxNativeGetD3D12Fence(agfxFence* fence) {
+    return fence->d3d12Fence;
+}
+
+IDXGISwapChain4* agfxNativeGetDXGISwapChain(agfxSwapChain* swapChain) {
+    return swapChain->dxgiSwapChain;
 }

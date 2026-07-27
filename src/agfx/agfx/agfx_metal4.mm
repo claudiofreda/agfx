@@ -5,6 +5,9 @@
  */
 
 #include "agfx.h"
+
+#define AGFX_EXPOSE_METAL
+#include "agfx_native.h"
 #include <Metal/Metal.h>
 #include <QuartzCore/QuartzCore.h>
 #include <vector>
@@ -2641,4 +2644,47 @@ void agfxComputePassExecuteIndirectBundle(agfxComputePass* computePass, agfxIndi
 
     [computePass->encoder executeCommandsInBuffer:bundle->icb
                                    indirectBuffer:bundle->execRanges.gpuAddress + (uint64_t)executeInfo->countIndex * sizeof(MTLIndirectCommandBufferExecutionRange)];
+}
+
+// Native interop
+//
+// Unwraps AGFX objects into the Metal objects they wrap, for third-party libraries that speak Metal
+// directly (MetalFX in particular). These are compiled unconditionally -- AGFX_EXPOSE_METAL gates
+// only whether a consumer's translation unit sees the declarations. See agfx_native.h for the
+// ownership and pass-scope rules that come with every one of these.
+
+AGFX_NATIVE_MTL(MTLDevice) agfxNativeGetMTLDevice(agfxDevice* device) {
+    return device->device;
+}
+
+AGFX_NATIVE_MTL(MTLResidencySet) agfxNativeGetMTLResidencySet(agfxDevice* device) {
+    return device->residencySet;
+}
+
+AGFX_NATIVE_MTL(MTL4CommandQueue) agfxNativeGetMTL4CommandQueue(agfxCommandQueue* queue) {
+    return queue->commandQueue;
+}
+
+AGFX_NATIVE_MTL(MTL4CommandBuffer) agfxNativeGetMTL4CommandBuffer(agfxCommandBuffer* commandBuffer) {
+    return commandBuffer->commandBuffer;
+}
+
+AGFX_NATIVE_MTL(MTLTexture) agfxNativeGetMTLTexture(agfxTexture* texture) {
+    return texture->texture;
+}
+
+AGFX_NATIVE_MTL(MTLBuffer) agfxNativeGetMTLBuffer(agfxBuffer* buffer) {
+    return buffer->buffer;
+}
+
+AGFX_NATIVE_MTL(MTLHeap) agfxNativeGetMTLHeap(agfxHeap* heap) {
+    return heap->heap;
+}
+
+AGFX_NATIVE_MTL(MTLSharedEvent) agfxNativeGetMTLSharedEvent(agfxFence* fence) {
+    return fence->fence;
+}
+
+AGFX_NATIVE_MTL_CLASS(CAMetalLayer) agfxNativeGetCAMetalLayer(agfxSwapChain* swapChain) {
+    return swapChain->metalLayer;
 }

@@ -1,6 +1,6 @@
 ---
 name: agfx-synchronization
-description: ALWAYS use when working with AGFX fences, frames-in-flight pacing, queue signal/wait, resource-state barriers, or the barrier "agglomerate" flag. Trigger for agfxFenceCreate/Wait/Signal/GetCompletedValue, agfxCommandQueueSignal/Wait, agfxCommandBufferTextureBarrier/MemoryBarrier, agfxComputePassTextureUAVBarrier/BufferUAVBarrier, agfxResourceState transitions, "GPU/CPU sync", "drain the GPU", "frames in flight", "hazard tracking", agglomerate flag, resize/HDR-toggle-before-recreate ordering. Do NOT trigger for swap chain acquire/present mechanics themselves — use agfx-presentation-and-swapchain. Do NOT trigger for render pass attachment authoring — use agfx-render-targets-and-passes.
+description: ALWAYS use when working with AGFX fences, frames-in-flight pacing, queue signal/wait, resource-state barriers, or the barrier "agglomerate" flag. Trigger for agfxFenceCreate/Wait/Signal/GetCompletedValue, agfxCommandQueueSignal/Wait, agfxCommandBufferTextureBarrier/MemoryBarrier, agfxComputePassTextureUAVBarrier/BufferUAVBarrier, agfxResourceState transitions, "GPU/CPU sync", "drain the GPU", "frames in flight", "hazard tracking", agglomerate flag, resize/HDR-toggle-before-recreate ordering. Do NOT trigger for swap chain acquire/present mechanics themselves — use agfx-presentation-and-swapchain. Do NOT trigger for render pass attachment authoring — use agfx-render-targets-and-passes. Do NOT trigger for resource creation, placement heaps, or agfxCommandBufferAliasingBarrier — use agfx-resources.
 ---
 
 # AGFX Synchronization: Fences, Barriers & Frame Pacing
@@ -26,6 +26,7 @@ The second thing to internalize is **barrier scope**. Metal 4 distinguishes barr
 **Doesn't own:**
 - Swap chain acquire/present call sequence itself → `agfx-presentation-and-swapchain`
 - Render pass attachment state requirements (which states attachments must be in before `agfxRenderPassBegin`) → `agfx-render-targets-and-passes` (though the barriers to reach those states are documented here)
+- `agfxCommandBufferAliasingBarrier`, placement heaps, and resource creation/residency/destruction → `agfx-resources` (the aliasing barrier obeys every rule here, including `agglomerate`, but is meaningless outside a heap)
 
 ## References
 
