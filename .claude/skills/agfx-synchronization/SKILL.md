@@ -1,13 +1,15 @@
 ---
 name: agfx-synchronization
-description: ALWAYS use when working with AGFX fences, frames-in-flight pacing, queue signal/wait, resource-state barriers, or the barrier "agglomerate" flag. Trigger for agfxFenceCreate/Wait/Signal/GetCompletedValue, agfxCommandQueueSignal/Wait, agfxCommandBufferTextureBarrier/BufferBarrier, agfxComputePassTextureUAVBarrier/BufferUAVBarrier, agfxResourceState transitions, "GPU/CPU sync", "drain the GPU", "frames in flight", "hazard tracking", agglomerate flag, resize/HDR-toggle-before-recreate ordering. Do NOT trigger for swap chain acquire/present mechanics themselves — use agfx-presentation-and-swapchain. Do NOT trigger for render pass attachment authoring — use agfx-render-targets-and-passes.
+description: ALWAYS use when working with AGFX fences, frames-in-flight pacing, queue signal/wait, resource-state barriers, or the barrier "agglomerate" flag. Trigger for agfxFenceCreate/Wait/Signal/GetCompletedValue, agfxCommandQueueSignal/Wait, agfxCommandBufferTextureBarrier/MemoryBarrier, agfxComputePassTextureUAVBarrier/BufferUAVBarrier, agfxResourceState transitions, "GPU/CPU sync", "drain the GPU", "frames in flight", "hazard tracking", agglomerate flag, resize/HDR-toggle-before-recreate ordering. Do NOT trigger for swap chain acquire/present mechanics themselves — use agfx-presentation-and-swapchain. Do NOT trigger for render pass attachment authoring — use agfx-render-targets-and-passes.
 ---
 
 # AGFX Synchronization: Fences, Barriers & Frame Pacing
 
 ## Overview
 
-AGFX exposes one fence type (`agfxFence`) used identically for CPU↔GPU and GPU↔GPU synchronization, and two barrier APIs: **state transitions** (`agfxCommandBufferTextureBarrier`/`agfxCommandBufferBufferBarrier`) and **UAV hazard barriers** (`agfxComputePassTextureUAVBarrier`/`BufferUAVBarrier`). The tricky part is that AGFX's Metal backend has no per-resource hazard tracking the way D3D12 does — barriers on Metal are stage-based and get merged into a single pending barrier, controlled by the `agglomerate` parameter. Getting `agglomerate` wrong is the single most common cross-platform bug in AGFX code: it looks completely correct on D3D12 (which ignores the flag and always transitions immediately) while producing missing barriers or corrupted output on Metal.
+AGFX exposes one fence type (`agfxFence`) used identically for CPU↔GPU and GPU↔GPU synchronization, and two barrier APIs: **state transitions** (`agfxCommandBufferTextureBarrier` for textures, `agfxCommandBufferMemoryBarrier` for buffers and acceleration structures) and **UAV hazard barriers** (`agfxComputePassTextureUAVBarrier`/`BufferUAVBarrier`). The tricky part is that AGFX's Metal backend has no per-resource hazard tracking the way D3D12 does — barriers on Metal are stage-based and get merged into a single pending barrier, controlled by the `agglomerate` parameter. Getting `agglomerate` wrong is the single most common cross-platform bug in AGFX code: it looks completely correct on D3D12 (which ignores the flag and always transitions immediately) while producing missing barriers or corrupted output on Metal.
+
+`agfxCommandBufferMemoryBarrier` takes no resource argument at all — unlike the texture barrier, it isn't scoped to one buffer or acceleration structure. Buffers and acceleration structures have no "layout" to transition (only textures do), so on D3D12 this is a global memory barrier and on Metal it merges into the same stage-based tracker textures use; there is nothing more specific to scope it to on either backend. Calling it once orders *all* prior GPU access in `oldState` against *all* subsequent access in `newState` — if you used to barrier two buffers that transition in lockstep (e.g. an indirect bundle's commands + count buffers, see `agfx-mdi`), that's now one call, not two identical ones back-to-back.
 
 The second thing to internalize is **barrier scope**. Metal 4 distinguishes barriers that order work against *prior encoders* from barriers that order work *within the current encoder*, and they are not interchangeable — using the wrong one produces a barrier that silently orders nothing. The two AGFX barrier APIs map onto that split: **state transitions are cross-encoder, UAV barriers are intra-encoder.** Pick by where the producer and consumer actually live, not by which call is more convenient.
 
@@ -17,7 +19,7 @@ The second thing to internalize is **barrier scope**. Metal 4 distinguishes barr
 - `agfxFenceCreate`/`Destroy`/`Wait`/`Signal`/`GetCompletedValue`
 - `agfxCommandQueueSignal`/`agfxCommandQueueWait` (GPU-side queue signal/wait)
 - Frames-in-flight pacing pattern (per-slot fence values, `kFramesInFlight`)
-- `agfxCommandBufferTextureBarrier`/`agfxCommandBufferBufferBarrier` and the `agglomerate` flag's Metal-vs-D3D12 semantics
+- `agfxCommandBufferTextureBarrier`/`agfxCommandBufferMemoryBarrier` and the `agglomerate` flag's Metal-vs-D3D12 semantics
 - `agfxComputePassTextureUAVBarrier`/`agfxComputePassBufferUAVBarrier` (UAV read/write hazard barriers within a compute pass)
 - The "drain the GPU before destroying/recreating a resource still referenced by in-flight work" rule
 
@@ -76,7 +78,7 @@ Skipping this drain is a use-after-free/GPU-fault waiting to happen: the old res
 
 ### The `agglomerate` barrier flag
 
-`agfxCommandBufferTextureBarrier`/`agfxCommandBufferBufferBarrier` take an `agglomerate` bool with backend-divergent meaning:
+`agfxCommandBufferTextureBarrier`/`agfxCommandBufferMemoryBarrier` take an `agglomerate` bool with backend-divergent meaning:
 
 - **Metal**: no per-resource hazard tracking exists. `agglomerate = true` merges this transition's producer/consumer stages into a single pending barrier, flushed automatically at the start of the next `agfxComputePassBegin`/`agfxRenderPassBegin` — or immediately, if a pass is already open when the call is made. `agglomerate = false` is a no-op on Metal — the barrier is **silently dropped**, not emitted some other way.
 - **D3D12**: the flag is ignored entirely; the transition is always emitted immediately regardless of its value.
@@ -96,6 +98,10 @@ agfxCommandBufferTextureBarrier(cmd, backBuffer, AGFX_RESOURCE_STATE_PRESENT, AG
 Both `agfxRenderPassBegin` and `agfxComputePassBegin` flush any pending agglomerated barriers automatically — you don't need (and can't) manually flush them. Calling a transition barrier *while a pass is already open* also works: the backend flushes it inline against the open encoder. This is what makes a mid-pass transition (e.g. a copy into a buffer, then a dispatch that reads it, both inside one compute pass) actually order correctly.
 
 **Transitions out of a read-only state are real barriers.** A `PIXEL_SHADER_RESOURCE → UNORDERED_ACCESS` or `INDIRECT_ARGUMENT → UNORDERED_ACCESS` transition is a write-after-read hazard: the readers must finish before the new writer starts. The backend derives the "wait for" stages from whoever *read* the resource when the old state writes nothing (and symmetrically, the "must wait" stages from whoever *writes* when the new state only writes, e.g. `RENDER_TARGET`). Don't skip these on the assumption that "nothing wrote it, so there's nothing to synchronize" — that reasoning is what leaves a GPU-driven pass overwriting buffers the previous frame is still reading.
+
+### Backend implementation notes (`agfx_d3d12.cpp`, if editing the D3D12 backend)
+
+D3D12 Enhanced Barriers (not legacy `ResourceBarrier`) are a hard requirement, checked once at device creation via `D3D12_FEATURE_D3D12_OPTIONS12.EnhancedBarriersSupported` — there is no legacy fallback path. `agfxCommandBufferTextureBarrier` emits a `D3D12_BARRIER_TYPE_TEXTURE` barrier (real `D3D12_BARRIER_LAYOUT` transition); `agfxCommandBufferMemoryBarrier` emits a `D3D12_BARRIER_TYPE_GLOBAL` barrier (no layout, since buffers/AS don't have one). One enhanced-barrier quirk to know before touching this code: a global barrier rejects `AccessBefore=COMMON` paired with a non-`COMMON` `AccessAfter` (texture/buffer-scoped barriers allow it freely) — `agfxCommandBufferMemoryBarrier` clamps `AccessAfter` to `COMMON` in that case, which loses no real ordering since the `Sync` scope (not `Access`) is what actually creates the GPU wait, and `COMMON` access already implies full visibility. See `notes/BARRIER_REWORK.md` for the full migration rationale and the state→(Sync, Access, Layout) mapping tables.
 
 ### UAV hazard barriers — **between two dispatches in the same pass**
 

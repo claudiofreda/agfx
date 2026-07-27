@@ -50,7 +50,7 @@ This is a bigger conceptual gap than porting from D3D12 or Vulkan (both of which
 | `ClearRenderTargetView`/`ClearDepthStencilView` | `agfxLoadOp` = `AGFX_LOAD_OPERATION_CLEAR` on the render pass attachment | clears are declared as part of starting the pass, not a separate call |
 | `Draw`/`DrawIndexed`/`DrawInstanced` | `agfxRenderPassDraw`/`agfxRenderPassDrawIndexed` | 1:1 in spirit; called on the render pass object, not the context |
 | `Dispatch` | `agfxComputePassDispatch` | recorded within an `agfxComputePass`, not directly on the context |
-| No explicit resource-state concept (driver-managed hazard tracking) | `agfxResourceState` + `agfxCommandBufferTextureBarrier`/`BufferBarrier` | this is the single biggest new burden a D3D11 port takes on: every render target write → shader read transition, every UAV write → next-read ordering, must now be barriered by hand — see `agfx-synchronization` |
+| No explicit resource-state concept (driver-managed hazard tracking) | `agfxResourceState` + `agfxCommandBufferTextureBarrier` (textures) / `agfxCommandBufferMemoryBarrier` (buffers) | this is the single biggest new burden a D3D11 port takes on: every render target write → shader read transition, every UAV write → next-read ordering, must now be barriered by hand — see `agfx-synchronization` |
 | No explicit CPU/GPU sync (driver-managed) | `agfxFence` + frame-in-flight command buffer rotation | D3D11 never required manual fencing; AGFX does — see `agfx-synchronization` |
 
 ## Recommended Porting Order

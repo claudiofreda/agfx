@@ -49,14 +49,14 @@ Everything is rebuilt every frame; bundle contents are scoped to the frame that 
 
 ```cpp
 // 0. WAR: the previous frame may still be replaying this bundle (see gotcha 5).
-agfxCommandBufferBufferBarrier(cmd, commandsBuffer,
+agfxCommandBufferMemoryBarrier(cmd,
     AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
 
 agfxComputePass* pass = agfxComputePassBegin(cmd, "Culling");
 
 // 1. Reset the count slot, then transition it for atomic appends.
 agfxComputePassCopyBufferToBuffer(pass, zeroBuffer, countBuffer, 0, 0, sizeof(uint32_t));
-agfxCommandBufferBufferBarrier(cmd, countBuffer,
+agfxCommandBufferMemoryBarrier(cmd,
     AGFX_RESOURCE_STATE_COPY_DEST, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
 
 // 2. The producing shader appends draws + increments the count.
@@ -78,10 +78,9 @@ agfxComputePassPrepareIndirectBundle(pass, bundle, &prepareInfo);
 
 agfxComputePassEnd(pass);
 
-// 5. Hand off to the replay.
-agfxCommandBufferBufferBarrier(cmd, commandsBuffer,
-    AGFX_RESOURCE_STATE_UNORDERED_ACCESS, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
-agfxCommandBufferBufferBarrier(cmd, countBuffer,
+// 5. Hand off to the replay. agfxCommandBufferMemoryBarrier isn't scoped to a resource (see
+// agfx-synchronization), so one call orders both the commands and count buffers together.
+agfxCommandBufferMemoryBarrier(cmd,
     AGFX_RESOURCE_STATE_UNORDERED_ACCESS, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
 
 // 6. Replay, inside a render pass (or a compute pass for DISPATCH bundles).

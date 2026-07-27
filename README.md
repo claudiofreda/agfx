@@ -102,6 +102,7 @@ On Windows:
 - agfx_shader: dxcompiler.lib
 
 ## Changelogs
+- v1.3.2: Barrier rework
 - v1.3.1: Pipeline cache update
 - v1.3.0: Tests update
 - v1.2.0: Multi draw indirect update

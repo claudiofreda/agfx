@@ -1,6 +1,6 @@
 ---
 name: agfx-raytracing
-description: ALWAYS use when building or tracing against acceleration structures in AGFX — creating agfxAccelerationStructure (BLAS/TLAS) objects, filling agfxAccelerationStructureGeometry / agfxAccelerationStructureInstance, building/updating/compacting them in a compute pass, or writing inline-raytracing (RayQuery) HLSL compute shaders that trace an AGFXRaytracingAccelerationStructure. Trigger for agfxAccelerationStructureCreate/Destroy/GetSizes/GetHandle/AddInstances/ResetInstances, agfxComputePassBuildAccelerationStructure/UpdateAccelerationStructure/CopyAccelerationStructure/CompactAccelerationStructure, agfxCommandBufferAccelerationStructureBarrier, AGFX_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL/TOP_LEVEL, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, supportsRayTracing, RayQuery/TraceRayInline/CommittedStatus, "ray tracing", "reflections", "BLAS", "TLAS", "acceleration structure", agfx::AccelerationStructure, agfx::ez CreateBottomLevel/CreateTopLevel. Do NOT trigger for general compute dispatch or barriers unrelated to acceleration structures — use agfx-synchronization. Do NOT trigger for the bindless shader-authoring mechanics themselves (ResourceHandle, push constants) — use agfx-writing-bindless-shaders.
+description: ALWAYS use when building or tracing against acceleration structures in AGFX — creating agfxAccelerationStructure (BLAS/TLAS) objects, filling agfxAccelerationStructureGeometry / agfxAccelerationStructureInstance, building/updating/compacting them in a compute pass, or writing inline-raytracing (RayQuery) HLSL compute shaders that trace an AGFXRaytracingAccelerationStructure. Trigger for agfxAccelerationStructureCreate/Destroy/GetSizes/GetHandle/AddInstances/ResetInstances, agfxComputePassBuildAccelerationStructure/UpdateAccelerationStructure/CopyAccelerationStructure/CompactAccelerationStructure, agfxCommandBufferMemoryBarrier, AGFX_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL/TOP_LEVEL, AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, supportsRayTracing, RayQuery/TraceRayInline/CommittedStatus, "ray tracing", "reflections", "BLAS", "TLAS", "acceleration structure", agfx::AccelerationStructure, agfx::ez CreateBottomLevel/CreateTopLevel. Do NOT trigger for general compute dispatch or barriers unrelated to acceleration structures — use agfx-synchronization. Do NOT trigger for the bindless shader-authoring mechanics themselves (ResourceHandle, push constants) — use agfx-writing-bindless-shaders.
 ---
 
 # AGFX Ray Tracing
@@ -73,10 +73,10 @@ agfxAccelerationStructure* blas = agfxAccelerationStructureCreate(device, &blasI
 ## Critical gotchas (all learned the hard way)
 
 ### 1. Barrier source state MUST be `RAYTRACING_ACCELERATION_STRUCTURE`, never `COMMON`
-`AGFX_RESOURCE_STATE_COMMON` maps to no stages at all — it neither reads nor writes — so a `COMMON → RAYTRACING_ACCELERATION_STRUCTURE` barrier has nothing to order against and is silently a **no-op**. Builds sharing one scratch buffer then run concurrently and the TLAS reads a half-built BLAS → GPU memory corruption → **device lost / window-server hang**. Use AS→AS, which names the acceleration-structure stage on both sides:
+`AGFX_RESOURCE_STATE_COMMON` maps to no stages at all — it neither reads nor writes — so a `COMMON → RAYTRACING_ACCELERATION_STRUCTURE` barrier has nothing to order against and is silently a **no-op**. Builds sharing one scratch buffer then run concurrently and the TLAS reads a half-built BLAS → GPU memory corruption → **device lost / window-server hang**. Use AS→AS, which names the acceleration-structure stage on both sides. `agfxCommandBufferMemoryBarrier` (this replaced the old, AS-specific `agfxCommandBufferAccelerationStructureBarrier`) takes no resource argument — see `agfx-synchronization` for why:
 
 ```cpp
-agfxCommandBufferAccelerationStructureBarrier(cmd, as,
+agfxCommandBufferMemoryBarrier(cmd,
     AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,   // producer = AccelerationStructure stage
     AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, true);
 ```
@@ -135,7 +135,7 @@ auto sizes = blas.GetSizes();                    // scratch sizing
     agfx::ComputePass pass = cmd.BeginComputePass("Build BLAS");
     pass.BuildAccelerationStructure(blas, scratch, 0);
 }
-cmd.AccelerationStructureBarrier(blas,
+cmd.MemoryBarrier(
     AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
     AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE);
 uint32_t handle = (uint32_t)tlas.GetHandle();    // → push constant
