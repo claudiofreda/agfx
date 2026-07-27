@@ -15,8 +15,10 @@
 
 #include <dispatch/dispatch.h>
 #include <mach/mach_time.h>
+#include <sys/sysctl.h>
 #include <cstdio>
 #include <cstdarg>
+#include <cstring>
 
 // Types
 struct agfxRenderPipeline {
@@ -829,6 +831,18 @@ void agfxDeviceGetInfo(agfxDevice* device, agfxDeviceInfo* info) {
     info->supportsRayTracing = device->device.supportsRaytracing;
     info->supportsMeshShaders = device->device.supportsRaytracing; // Hardware RT and MS is both M3+ so if one is supported, the other is too
     info->supportsMultiDrawIndirect = YES;
+
+    // Metal drivers ship as part of the OS rather than as a discrete, independently-versioned
+    // component the way DXGI reports one on Windows, so there is no equivalent driver-version query.
+    // The OS build (ProductBuildVersion, e.g. "23G93" -- same string `sw_vers -buildVersion` prints)
+    // is the practical stand-in: it changes exactly when the Metal driver could have changed, which
+    // is the only thing callers actually need it for (deciding whether to discard and recompile a
+    // pipeline cache blob built under a previous OS build).
+    memset(info->driverVersion, 0, sizeof(info->driverVersion));
+    size_t size = sizeof(info->driverVersion) - 1;
+    if (sysctlbyname("kern.osversion", info->driverVersion, &size, NULL, 0) != 0) {
+        strncpy(info->driverVersion, "Unknown", sizeof(info->driverVersion) - 1);
+    }
 }
 
 void agfxDeviceMakeResourcesResident(agfxDevice* device) {

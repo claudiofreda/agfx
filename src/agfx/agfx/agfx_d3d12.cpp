@@ -546,6 +546,21 @@ void agfxDeviceGetInfo(agfxDevice* device, agfxDeviceInfo* info) {
     } else {
         strcpy_s(info->name, sizeof(info->name), "Unknown Adapter");
     }
+
+    // The UMD (user-mode driver) version, queried the documented way: CheckInterfaceSupport with
+    // IID_IDXGIDevice is a special case that returns the driver version rather than an actual
+    // interface. It comes back packed as 4 WORDs across a LARGE_INTEGER, conventionally displayed
+    // as "A.B.C.D" (e.g. NVIDIA's "32.0.15.6094").
+    LARGE_INTEGER driverVersion = {};
+    if (device->dxgiAdapter && SUCCEEDED(device->dxgiAdapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &driverVersion))) {
+        const uint16_t a = HIWORD(driverVersion.HighPart);
+        const uint16_t b = LOWORD(driverVersion.HighPart);
+        const uint16_t c = HIWORD(driverVersion.LowPart);
+        const uint16_t d = LOWORD(driverVersion.LowPart);
+        sprintf_s(info->driverVersion, sizeof(info->driverVersion), "%u.%u.%u.%u", a, b, c, d);
+    } else {
+        strcpy_s(info->driverVersion, sizeof(info->driverVersion), "Unknown");
+    }
 }
 
 void agfxDeviceMakeResourcesResident(agfxDevice* device) {} // Nothing to do here

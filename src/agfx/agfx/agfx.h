@@ -116,6 +116,17 @@ typedef struct agfxDeviceInfo {
     /// @brief The name of the device, e.g., "NVIDIA GeForce RTX 4090".
     char name[256];
 
+    /// @brief The GPU driver's version. On D3D12, the UMD version DXGI reports, e.g. "32.0.15.6094".
+    /// On Metal, there is no discrete driver version to query -- the OS build instead
+    /// (ProductBuildVersion, e.g. "23G93"), since Metal's driver ships with the OS. Compare this
+    /// against the version stored alongside a serialized agfxRenderPipeline/agfxComputePipeline
+    /// cache blob (from agfxRenderPipelineGetCache/agfxComputePipelineGetCache) to decide whether to
+    /// discard it and recompile: a cache blob built under a different driver/OS build is not
+    /// guaranteed to still be valid, and the pipeline creation functions silently ignore a
+    /// stale/mismatched one rather than failing, so this is the only reliable way to know a
+    /// recompile is warranted ahead of time.
+    char driverVersion[64];
+
     /// @brief Whether the device supports ray tracing. Set to 1 if supported, 0 otherwise.
     agfxBool supportsRayTracing;
 
