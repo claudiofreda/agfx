@@ -32,7 +32,7 @@
 // IndirectResult::Unsupported and the caller skips -- as mesh_common.h does for mesh shading. The
 // mesh-bundle kinds require *both* capabilities.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 namespace agfxtest
 {

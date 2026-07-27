@@ -12,7 +12,7 @@
 // participates in the written value, so a view bound at the wrong offset or as the wrong descriptor
 // type yields zeros or garbage across the whole golden instead of one suspicious word.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

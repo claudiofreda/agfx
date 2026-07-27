@@ -20,7 +20,7 @@
 // expectation replicates that clamp rather than skipping those texels, so the edge behaviour is
 // covered too.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

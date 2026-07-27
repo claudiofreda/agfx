@@ -13,7 +13,7 @@
 // backend that ignores srcOffset or dstOffset produces a destination whose halves are duplicates or
 // misaligned rather than the interleaving the golden records.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

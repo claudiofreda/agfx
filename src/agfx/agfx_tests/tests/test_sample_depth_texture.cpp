@@ -21,7 +21,7 @@
 // land between 8-bit codes; going through an RGBA8 destination would force a tolerance where an
 // exact check is available.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

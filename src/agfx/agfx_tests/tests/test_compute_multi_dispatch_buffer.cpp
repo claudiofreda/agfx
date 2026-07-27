@@ -12,7 +12,7 @@
 // serialize the dispatches — a backend that lets them overlap lands somewhere below the golden, and
 // the per-pass index means a dropped or reordered dispatch is distinguishable from a lost one.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

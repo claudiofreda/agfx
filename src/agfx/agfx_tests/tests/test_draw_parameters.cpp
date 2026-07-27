@@ -40,7 +40,7 @@
 // firstInstance for exactly that reason. firstInstance is still passed non-zero, to exercise the
 // parameter through the API surface down to the backend's baseInstance/startInstanceLocation argument.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

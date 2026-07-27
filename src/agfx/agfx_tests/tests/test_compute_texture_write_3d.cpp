@@ -16,7 +16,7 @@
 // texture's slices are a different addressing mechanism from array layers on both backends (region
 // z origin vs. subresource layer), and only one of the two paths being right is a real failure mode.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

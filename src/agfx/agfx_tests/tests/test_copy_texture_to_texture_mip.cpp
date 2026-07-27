@@ -11,7 +11,7 @@
 // mip 0, writing the destination's mip 0, and overrunning the region. Mip 0 of the destination is
 // checked to be untouched alongside the mip 1 golden.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

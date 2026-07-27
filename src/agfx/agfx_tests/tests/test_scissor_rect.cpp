@@ -14,7 +14,7 @@
 // so a swapped x/y or a width/height mixup shifts the crop visibly.
 //
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

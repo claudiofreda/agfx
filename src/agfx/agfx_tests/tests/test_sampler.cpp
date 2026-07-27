@@ -11,7 +11,7 @@
 // Covers a few filter/address permutations to catch a backend that only populates the heap for the
 // default configuration.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

@@ -11,7 +11,7 @@
 // checked against all three neighbours rather than just one, so an off-by-one in either direction is
 // caught.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

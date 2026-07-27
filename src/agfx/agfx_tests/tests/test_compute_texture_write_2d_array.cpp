@@ -13,7 +13,7 @@
 // dispatch whose Z dimension is dropped, or a backend that writes the layers in the wrong order all
 // come out as a visibly wrong stack rather than a plausible image.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

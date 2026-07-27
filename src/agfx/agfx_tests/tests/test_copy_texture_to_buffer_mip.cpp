@@ -14,7 +14,7 @@
 // regression net; the in-test comparison is the oracle. Every test in this mip/slice family does the
 // same.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

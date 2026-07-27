@@ -28,7 +28,7 @@
 // point makes "the four combinations agree" a property of the code rather than something kept in
 // sync by hand across four copies of ~250 lines.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 namespace agfxtest
 {

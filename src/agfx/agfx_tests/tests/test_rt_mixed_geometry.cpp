@@ -16,7 +16,7 @@
 // the reverse. Two goldens over one scene means an instance that silently resolved to the wrong
 // BLAS shows up as geometry appearing in the image where the other kind should be.
 
-#include "../test_rt_scene.h"
+#include "agfx_tests/test_rt_scene.h"
 
 namespace
 {

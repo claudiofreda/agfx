@@ -26,7 +26,7 @@
 // not apply here, and a host upload avoids needing a writeable non-cube view aliased over a cube
 // texture (which ez, typing every view from its texture, cannot express anyway).
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

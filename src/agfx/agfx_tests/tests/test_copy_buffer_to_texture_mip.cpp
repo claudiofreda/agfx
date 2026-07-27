@@ -11,7 +11,7 @@
 // be left exactly as seeded. A backend that ignores mipLevel fails the second check loudly rather
 // than quietly producing a plausible-looking mip 1.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

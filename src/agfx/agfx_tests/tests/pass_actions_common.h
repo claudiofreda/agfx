@@ -18,7 +18,7 @@
 // live here — the assertions are about the background, not about the draw, and each test file is
 // left holding one load op and one expectation about that background.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <string>
 

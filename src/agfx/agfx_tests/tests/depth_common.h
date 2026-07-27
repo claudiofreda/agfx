@@ -20,7 +20,7 @@
 // one depth buffer, not a single pipeline state. Each draw carries its own depth state and push
 // constants, which is what lets one shader and one host path serve all three families.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <vector>
 

@@ -18,7 +18,7 @@
 // Routing all three flavors through one entry point also makes "C, C++ and ez produce the same
 // image for the same sampler" a property of the code rather than something kept in sync by hand.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 namespace agfxtest
 {

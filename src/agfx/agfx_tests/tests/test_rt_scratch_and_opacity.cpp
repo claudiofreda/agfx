@@ -24,7 +24,7 @@
 // flags, so an opaque instance overrides non-opaque geometry beneath it. Three tests pin the corners
 // down — both opaque, geometry non-opaque under an opaque instance, and a non-opaque instance.
 
-#include "../test_rt_scene.h"
+#include "agfx_tests/test_rt_scene.h"
 
 namespace
 {

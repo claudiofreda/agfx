@@ -16,7 +16,7 @@
 // rather than a displaced silhouette, so the golden is the box's coverage: an empty image is the
 // failure mode this catches.
 
-#include "../test_rt_scene.h"
+#include "agfx_tests/test_rt_scene.h"
 
 namespace
 {

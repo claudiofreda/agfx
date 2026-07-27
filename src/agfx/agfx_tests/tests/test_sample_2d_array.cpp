@@ -20,7 +20,7 @@
 // path is pinned independently by test_compute_texture_write_2d_array.cpp, so a failure here is
 // attributable to the sample.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

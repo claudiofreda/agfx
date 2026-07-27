@@ -12,7 +12,7 @@
 // touches AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, which isn't a legal ResourceBarrier
 // target on D3D12 -- that pseudo-state is only ever entered/left via a UAV barrier around a build).
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 namespace
 {

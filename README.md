@@ -70,7 +70,6 @@ Bindings for Zig, Rust and Odin can be find [here](https://github.com/AmelieHein
 
 - Vulkan, PS5, Switch 2 backend
 - Resource aliasing
-- Pipeline caching
 - Debug markers for D3D12
 - Sparse resources (unplanned)
 - Support for Slang + BDA (unplanned)
@@ -103,6 +102,7 @@ On Windows:
 - agfx_shader: dxcompiler.lib
 
 ## Changelogs
+- v1.3.1: Pipeline cache update
 - v1.3.0: Tests update
 - v1.2.0: Multi draw indirect update
 - v1.1.0: Raytracing update

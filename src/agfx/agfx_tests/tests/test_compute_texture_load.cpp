@@ -12,7 +12,7 @@
 // that ignores its coordinate or a view bound to the wrong texture; the swizzle catches a channel
 // order mixup between the sampled and storage paths.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

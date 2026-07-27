@@ -17,7 +17,7 @@
 // holding a negative channel) would not survive the trip to disk and the test would fail against
 // its own output. Values above 1.0 are what this test needs; extreme values are not.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

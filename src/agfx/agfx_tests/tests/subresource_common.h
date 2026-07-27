@@ -19,7 +19,7 @@
 // and checked byte-exact afterwards; that check is what actually holds the mipLevel/arrayLayer fields
 // of agfxRenderTargetCreateInfo to account.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <string>
 

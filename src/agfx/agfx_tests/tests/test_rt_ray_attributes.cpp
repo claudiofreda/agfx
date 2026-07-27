@@ -17,7 +17,7 @@
 // primitive cannot show a primitive index is wrong, and a scene with one instance cannot show an
 // instance ID is — so each case builds the geometry that makes its attribute observable.
 
-#include "../test_rt_scene.h"
+#include "agfx_tests/test_rt_scene.h"
 
 namespace
 {

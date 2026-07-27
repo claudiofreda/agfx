@@ -10,7 +10,7 @@
 // three destination layers are untouched is what actually holds the layer argument to account —
 // without it, a backend that wrote every layer would still produce a correct-looking layer 2.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

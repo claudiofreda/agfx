@@ -12,7 +12,7 @@
 // halves are then memcmp'd against the golden, so a wrong view offset, a wrong writeable flag, or a
 // broken Load*/Store* path all show up as differing bytes rather than a plausible pattern.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

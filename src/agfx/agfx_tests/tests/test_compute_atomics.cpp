@@ -12,7 +12,7 @@
 // a compare-exchange only one thread can win), so the golden is stable even though the execution
 // order is not — a dropped atomic shows up as a wrong total rather than as a flaky test.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

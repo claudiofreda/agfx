@@ -13,7 +13,7 @@
 // the two tests disagree against the same expectation.
 //
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

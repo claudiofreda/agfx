@@ -15,7 +15,7 @@
 // what tracing the source produced, so sharing the source's golden is the assertion. Update gets its
 // own golden because it is the one operation intended to *change* the result.
 
-#include "../test_rt_scene.h"
+#include "agfx_tests/test_rt_scene.h"
 
 namespace
 {

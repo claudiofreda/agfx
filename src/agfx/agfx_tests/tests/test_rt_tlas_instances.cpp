@@ -16,7 +16,7 @@
 // which is the whole economic point of a two-level structure and a real bug surface on both
 // backends.
 
-#include "../test_rt_scene.h"
+#include "agfx_tests/test_rt_scene.h"
 
 namespace
 {

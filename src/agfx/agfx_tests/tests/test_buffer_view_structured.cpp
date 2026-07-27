@@ -12,7 +12,7 @@
 // halves go into one golden, so a view that ignores the buffer's stride — the failure mode
 // structured views actually have — lands the pattern on the wrong element boundaries and diverges.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

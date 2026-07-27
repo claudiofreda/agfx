@@ -16,7 +16,7 @@
 // filtering actually has something to interpolate -- at 1:1 a nearest and a linear sampler agree
 // everywhere and the test would pass with filtering entirely unimplemented.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

@@ -12,7 +12,7 @@
 // that overreaches its region, or that silently blits the whole surface, changes texels the golden
 // says should still hold the destination's own pattern.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

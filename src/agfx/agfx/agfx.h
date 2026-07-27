@@ -1513,6 +1513,11 @@ typedef struct agfxRenderPipelineCreateInfo {
     uint32_t meshGroupSizeY;
     /// @brief The mesh shader's thread group size in the Z dimension. Must match the shader's declared group size.
     uint32_t meshGroupSizeZ;
+
+    /// @brief (optional) The pipeline cache to use
+    uint8_t* cache;
+    /// @brief (optional) The size of the pipeline cache to use
+    uint64_t cacheSize;
 } agfxRenderPipelineCreateInfo;
 
 /// @brief Creates a new agfxRenderPipeline with the specified creation info.
@@ -1525,6 +1530,13 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
 /// @param device A pointer to the agfxDevice that owns the pipeline.
 /// @param pipeline A pointer to the agfxRenderPipeline to destroy.
 void agfxRenderPipelineDestroy(agfxDevice* device, agfxRenderPipeline* pipeline);
+
+/// @brief Gets the compiled ISA of the render pipeline object.
+/// @param device A pointer to the agfxDevice that owns the pipeline.
+/// @param pipeline The pipeline to get the cache from.
+/// @param outSize A pointer that will hold the size of the returned ISA buffer.
+/// @return The compiled pipeline ISA buffer. 
+uint8_t* agfxRenderPipelineGetCache(agfxDevice* device, agfxRenderPipeline* pipeline, uint64_t* outSize);
 
 // Compute pipeline
 
@@ -1540,6 +1552,10 @@ typedef struct agfxComputePipelineCreateInfo {
     uint32_t groupSizeY;
     /// @brief The shader's thread group size in the Z dimension. Must match the shader's declared group size.
     uint32_t groupSizeZ;
+    /// @brief (optional) The pipeline cache to use
+    uint8_t* cache;
+    /// @brief (optional) The size of the pipeline cache to use
+    uint64_t cacheSize;
 } agfxComputePipelineCreateInfo;
 
 /// @brief Creates a new agfxComputePipeline with the specified creation info.
@@ -1552,6 +1568,13 @@ agfxComputePipeline* agfxComputePipelineCreate(agfxDevice* device, const agfxCom
 /// @param device A pointer to the agfxDevice that owns the pipeline.
 /// @param pipeline A pointer to the agfxComputePipeline to destroy.
 void agfxComputePipelineDestroy(agfxDevice* device, agfxComputePipeline* pipeline);
+
+/// @brief Gets the compiled ISA of the render pipeline object.
+/// @param device A pointer to the agfxDevice that owns the pipeline.
+/// @param pipeline The pipeline to get the cache from.
+/// @param outSize A pointer that will hold the size of the returned ISA buffer.
+/// @return The compiled pipeline ISA buffer. 
+uint8_t* agfxComputePipelineGetCache(agfxDevice* device, agfxComputePipeline* pipeline, uint64_t* outSize);
 
 #ifdef __cplusplus
 }

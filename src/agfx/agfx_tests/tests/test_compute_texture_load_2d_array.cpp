@@ -20,7 +20,7 @@
 // The slice reversal is what this test adds over the 2D case: a Load() that ignores the slice
 // component of its coordinate reproduces the source stack unreversed, which the golden catches.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

@@ -16,7 +16,7 @@
 // reports that as MeshResult::Unsupported so the caller can skip rather than fail -- a hard failure
 // on a device without mesh shaders would be a false alarm, and silently passing would be worse.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 namespace agfxtest
 {

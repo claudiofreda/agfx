@@ -29,7 +29,7 @@
 // cross-check; a backend that implemented them correctly cannot fail regardless of its actual wave
 // width.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

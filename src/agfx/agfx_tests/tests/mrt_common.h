@@ -12,7 +12,7 @@
 // API flavors are written once and are guaranteed to drive identical work — which is the property
 // the suite is really asserting when it runs C, C++ and ez against a single golden.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <string>
 

@@ -30,7 +30,7 @@
 // oracle: ExpectedBands() states the answer up front, and a golden captured against a broken backend
 // cannot bless it.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <string>
 

@@ -19,7 +19,7 @@
 
 #include "raster_common.h" // for CountLitPixels
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

@@ -33,7 +33,7 @@
 // way to interleave a second or third queue's submissions into that ordering -- same reasoning as
 // queue_handoff_common.h.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <cstring>
 

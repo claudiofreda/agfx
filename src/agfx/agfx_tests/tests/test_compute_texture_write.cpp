@@ -11,7 +11,7 @@
 // structure at once, so a transposed destination, a half-covered dispatch grid, or a UAV view bound
 // at the wrong subresource all read as visibly wrong rather than plausibly different.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

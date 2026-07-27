@@ -16,7 +16,7 @@
 // exercises index-buffer offsetting and primitive ordering that a single triangle never touches;
 // the multi case stacks its three triangles at different depths so the green ramp orders them.
 
-#include "../test_rt_scene.h"
+#include "agfx_tests/test_rt_scene.h"
 
 namespace
 {

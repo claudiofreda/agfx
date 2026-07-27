@@ -16,7 +16,7 @@
 // Worth having separately from the buffer test: the buffer and texture UAV barriers are distinct
 // entry points, and on both backends they lower to different code.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

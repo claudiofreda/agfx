@@ -14,7 +14,7 @@
 // test from test_scissor_rect.cpp — the clipping there must come from the viewport alone.
 //
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

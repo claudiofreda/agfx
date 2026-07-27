@@ -12,7 +12,7 @@
 // width/height, or mis-computes the row pitch leaves the second pattern in the wrong place — visible
 // in the golden rather than merely off by a row.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

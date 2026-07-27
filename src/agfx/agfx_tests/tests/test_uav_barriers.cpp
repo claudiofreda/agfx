@@ -17,7 +17,7 @@
 // behind at 2*kRoundTrips - 1 -- so the test does not lean on FLIP tolerance to catch a race; either
 // value being off by even one means a barrier let a read run ahead of the write it depends on.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

@@ -11,7 +11,7 @@
 // test can name. As in the rest of this family the copied bytes are checked against the expected
 // layer directly, not only against the golden.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

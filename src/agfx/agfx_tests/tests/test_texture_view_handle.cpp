@@ -12,7 +12,7 @@
 // subranges, and a format reinterpretation (RGBA8_UNORM viewed as its sRGB counterpart) — the cases
 // where a backend is most likely to populate the heap for the default view only.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

@@ -20,7 +20,7 @@
 // byte-identical images for the same state, and routing them through one function makes that a
 // property of the code rather than something to keep in sync by hand across six files.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 namespace agfxtest
 {

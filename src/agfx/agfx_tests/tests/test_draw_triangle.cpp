@@ -11,7 +11,7 @@
 // bindless resources), then FLIP the readback against the golden PNG. Catches broken render pass
 // setup, wrong clear/load ops, flipped winding, inverted Y, and format mixups in one shot.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

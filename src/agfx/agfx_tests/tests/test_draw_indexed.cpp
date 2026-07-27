@@ -12,7 +12,7 @@
 // or from the wrong offset fetches the wrong corners and skews the blend, and a dropped index
 // buffer bind degenerates the quad entirely. See test_draw_indexed_u16.cpp for the 16-bit twin.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

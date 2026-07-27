@@ -1527,6 +1527,10 @@ agfxComputePipeline* agfxComputePipelineCreate(agfxDevice* device, const agfxCom
     psoDesc.pRootSignature = device->globalRootSignature;
     psoDesc.CS.pShaderBytecode = createInfo->computeShader->createInfo.code;
     psoDesc.CS.BytecodeLength = createInfo->computeShader->createInfo.codeSize;
+    if (createInfo->cacheSize > 0) {
+        psoDesc.CachedPSO.CachedBlobSizeInBytes = createInfo->cacheSize;
+        psoDesc.CachedPSO.pCachedBlob = createInfo->cache;
+    }
 
 	if (FAILED(device->d3d12Device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&pipeline->d3d12PipelineState)))) {
 		agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxComputePipelineCreate: CreateComputePipelineState failed");
@@ -1538,6 +1542,20 @@ agfxComputePipeline* agfxComputePipelineCreate(agfxDevice* device, const agfxCom
 
 void agfxComputePipelineDestroy(agfxDevice* device, agfxComputePipeline* pipeline) {
     device->createInfo.free(pipeline);
+}
+
+uint8_t* agfxComputePipelineGetCache(agfxDevice* device, agfxComputePipeline* pipeline, uint64_t* outSize) {
+    ID3DBlob* blob;
+    HRESULT result = pipeline->d3d12PipelineState->GetCachedBlob(&blob);
+    if (FAILED(result)) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxComputePipelineGetCache: GetCachedBlob failed");
+        return NULL;
+    }
+    uint8_t* bytecode = reinterpret_cast<uint8_t*>(device->createInfo.allocate(blob->GetBufferSize()));
+    memcpy(bytecode, blob->GetBufferPointer(), blob->GetBufferSize());
+    *outSize = blob->GetBufferSize();
+    blob->Release();
+    return bytecode;
 }
 
 // Render pipeline
@@ -1595,6 +1613,10 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
         psoDesc.PrimitiveTopologyType = agfxTopologyToD3D12PrimitiveTopologyType(createInfo->topology);
         psoDesc.SampleMask = UINT_MAX;
         psoDesc.SampleDesc.Count = 1;
+        if (createInfo->cacheSize > 0) {
+            psoDesc.CachedPSO.CachedBlobSizeInBytes = createInfo->cacheSize;
+            psoDesc.CachedPSO.pCachedBlob = createInfo->cache;
+        }
 
         auto stream = CD3DX12_PIPELINE_MESH_STATE_STREAM(psoDesc);
 
@@ -1649,6 +1671,10 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
         psoDesc.SampleMask = UINT_MAX;
         psoDesc.SampleDesc.Count = 1;
         psoDesc.InputLayout = { nullptr, 0 };
+        if (createInfo->cacheSize > 0) {
+            psoDesc.CachedPSO.CachedBlobSizeInBytes = createInfo->cacheSize;
+            psoDesc.CachedPSO.pCachedBlob = createInfo->cache;
+        }
 
         if (FAILED(device->d3d12Device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipeline->d3d12PipelineState)))) {
             agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxRenderPipelineCreate: CreateGraphicsPipelineState failed");
@@ -1663,6 +1689,20 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
 void agfxRenderPipelineDestroy(agfxDevice* device, agfxRenderPipeline* pipeline) {
     if (pipeline->d3d12PipelineState) pipeline->d3d12PipelineState->Release();
     device->createInfo.free(pipeline);
+}
+
+uint8_t* agfxRenderPipelineGetCache(agfxDevice* device, agfxRenderPipeline* pipeline, uint64_t* outSize) {
+    ID3DBlob* blob;
+    HRESULT result = pipeline->d3d12PipelineState->GetCachedBlob(&blob);
+    if (FAILED(result)) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxRenderPipelineGetCache: GetCachedBlob failed");
+        return NULL;
+    }
+    uint8_t* bytecode = reinterpret_cast<uint8_t*>(device->createInfo.allocate(blob->GetBufferSize()));
+    memcpy(bytecode, blob->GetBufferPointer(), blob->GetBufferSize());
+    *outSize = blob->GetBufferSize();
+    blob->Release();
+    return bytecode;
 }
 
 // Render pass

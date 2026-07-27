@@ -12,7 +12,7 @@
 // native pitch instead of the requested bytesPerRow, or that drops the buffer offset, produces
 // shifted bytes that an image comparison with a tolerance might have waved through.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

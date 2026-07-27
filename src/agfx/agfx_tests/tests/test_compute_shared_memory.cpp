@@ -12,7 +12,7 @@
 // the per-group sums, so a backend that mis-sizes groupshared storage or drops
 // GroupMemoryBarrierWithGroupSync fails on the halves independently.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

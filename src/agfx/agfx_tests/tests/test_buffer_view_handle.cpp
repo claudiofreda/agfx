@@ -11,7 +11,7 @@
 // the wrong descriptor. Walks all three view types in both the read-only and writeable flavors, plus
 // a non-zero offset, to catch a backend that only populates the heap for the default configuration.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <agfx/agfx_ez.hpp>
 

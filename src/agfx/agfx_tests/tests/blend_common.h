@@ -19,7 +19,7 @@
 // on the second draw. The source color and alpha live here rather than in each test so that every
 // golden in the family is comparable against every other.
 
-#include "../test_gpu.h"
+#include "agfx_tests/test_gpu.h"
 
 #include <vector>
 
