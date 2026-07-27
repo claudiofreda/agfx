@@ -30,7 +30,7 @@ target("agfx")
         add_frameworks("Metal", "QuartzCore", "CoreGraphics", { public = true })
     elseif is_plat("windows") then
         add_files("agfx/agfx_d3d12.cpp")
-        add_syslinks("d3d12", "dxgi", "dxguid", { public = true })
+        add_syslinks("d3d12", "dxgi", "dxguid", "WinPixEventRuntime", { public = true })
     end
 
 target("agfx_imgui")

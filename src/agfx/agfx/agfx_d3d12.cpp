@@ -17,6 +17,10 @@
 #include "d3dx12/d3d12.h"
 #include "d3dx12/d3dx12.h"
 
+#ifdef ENABLE_PIX
+    #include "WinPixEventRuntime/pix3.h"
+#endif
+
 // Enum stuff
 DXGI_FORMAT agfxTextureFormatToDXGIFormat(agfxTextureFormat format);
 D3D12_RESOURCE_DIMENSION agfxTextureTypeToD3D12ResourceDimension(agfxTextureType type);
@@ -1731,8 +1735,12 @@ agfxRenderPass* agfxRenderPassBegin(agfxCommandBuffer* cmdBuffer, const agfxRend
     memcpy(&renderPass->createInfo, createInfo, sizeof(agfxRenderPassCreateInfo));
     renderPass->commandBuffer = cmdBuffer;
 
-    // Bind render targets and clear them if needed
     ID3D12GraphicsCommandList* commandList = cmdBuffer->d3d12CommandList;
+#ifdef ENABLE_PIX
+    PIXBeginEvent(commandList, PIX_COLOR_DEFAULT, createInfo->name);
+#endif
+
+    // Bind render targets and clear them if needed
     D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[8] = {};
     D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = {};
     for (uint32_t i = 0; i < createInfo->colorAttachmentCount && i < 8; ++i) {
@@ -1749,6 +1757,7 @@ agfxRenderPass* agfxRenderPassBegin(agfxCommandBuffer* cmdBuffer, const agfxRend
     }
 
     commandList->OMSetRenderTargets(createInfo->colorAttachmentCount, rtvHandles, FALSE, createInfo->hasDepthAttachment ? &dsvHandle : nullptr);
+
     return renderPass;
 }
 
@@ -1803,6 +1812,9 @@ void agfxRenderPassDrawMesh(agfxRenderPass* renderPass, uint32_t groupCountX, ui
 }
 
 void agfxRenderPassEnd(agfxRenderPass* renderPass) {
+#ifdef ENABLE_PIX
+    PIXEndEvent(renderPass->commandBuffer->d3d12CommandList);
+#endif
     renderPass->commandBuffer->device->createInfo.tempFree(renderPass);
 }
 
@@ -1816,6 +1828,9 @@ agfxComputePass* agfxComputePassBegin(agfxCommandBuffer* commandBuffer, const ch
     agfxComputePass* computePass = (agfxComputePass*)commandBuffer->device->createInfo.tempAllocate(sizeof(agfxComputePass));
     computePass->commandBuffer = commandBuffer;
     computePass->device = commandBuffer->device;
+#ifdef ENABLE_PIX
+    PIXBeginEvent(commandBuffer->d3d12CommandList, PIX_COLOR_DEFAULT, name);
+#endif
     return computePass;
 }
 
@@ -1993,6 +2008,9 @@ void agfxComputePassDispatch(agfxComputePass* computePass, uint32_t groupCountX,
 }
 
 void agfxComputePassEnd(agfxComputePass* computePass) {
+#ifdef ENABLE_PIX
+    PIXEndEvent(computePass->commandBuffer->d3d12CommandList);
+#endif
     computePass->device->createInfo.tempFree(computePass);
 }
 
