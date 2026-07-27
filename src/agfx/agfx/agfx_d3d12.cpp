@@ -87,7 +87,7 @@ struct agfxSlotAllocator {
 
         bitmap.resize(bitmapSize, 0);
         freeSlots.reserve(maxSlots);
-        for (uint64_t i = 0; i < maxSlots; ++i) {
+        for (uint32_t i = 0; i < static_cast<uint32_t>(maxSlots); ++i) {
             freeSlots.push_back(i);
         }
     }
@@ -107,9 +107,9 @@ struct agfxSlotAllocator {
 
     void free(uint64_t slot) {
         if (slot >= maxSlots || slot < 0) return;
-        if (testBit(slot)) {
-            clearBit(slot);
-            freeSlots.push_back(slot);
+        if (testBit(static_cast<int>(slot))) {
+            clearBit(static_cast<int>(slot));
+            freeSlots.push_back(static_cast<uint32_t>(slot));
         }
     }
 
@@ -541,9 +541,10 @@ void agfxDeviceGetInfo(agfxDevice* device, agfxDeviceInfo* info) {
     DXGI_ADAPTER_DESC3 adapterDesc = {};
     if (device->dxgiAdapter) {
         device->dxgiAdapter->GetDesc3(&adapterDesc);
-        wcstombs(info->name, adapterDesc.Description, sizeof(info->name));
+        size_t converted = 0;
+        wcstombs_s(&converted, info->name, sizeof(info->name), adapterDesc.Description, _TRUNCATE);
     } else {
-        strcpy(info->name, "Unknown Adapter");
+        strcpy_s(info->name, sizeof(info->name), "Unknown Adapter");
     }
 }
 
@@ -1211,7 +1212,7 @@ agfxTextureView* agfxTextureViewCreate(agfxDevice* device, const agfxTextureView
 
 void agfxTextureViewDestroy(agfxDevice* device, agfxTextureView* textureView) {
     if (textureView->descriptor.index != UINT32_MAX) {
-        device->descriptorManager->agfxFreeResourceSlot(textureView->descriptor.index);
+        device->descriptorManager->agfxFreeResourceSlot((uint32_t)textureView->descriptor.index);
     }
     device->createInfo.free(textureView);
 }
@@ -1241,7 +1242,7 @@ agfxSampler* agfxSamplerCreate(agfxDevice* device, const agfxSamplerCreateInfo* 
 
 void agfxSamplerDestroy(agfxDevice* device, agfxSampler* sampler) {
     if (sampler->descriptor.index != UINT32_MAX) {
-        device->descriptorManager->freeSamplerSlot(sampler->descriptor.index);
+        device->descriptorManager->freeSamplerSlot((uint32_t)sampler->descriptor.index);
     }
     device->createInfo.free(sampler);
 }
@@ -1278,7 +1279,7 @@ agfxBufferView* agfxBufferViewCreate(agfxDevice* device, const agfxBufferViewCre
 }
 
 void agfxBufferViewDestroy(agfxDevice* device, agfxBufferView* bufferView) {
-    device->descriptorManager->agfxFreeResourceSlot(bufferView->descriptor.index);
+    device->descriptorManager->agfxFreeResourceSlot((uint32_t)bufferView->descriptor.index);
     device->createInfo.free(bufferView);
 }
 
@@ -1314,9 +1315,9 @@ agfxRenderTarget* agfxRenderTargetCreate(agfxDevice* device, const agfxRenderTar
 
 void agfxRenderTargetDestroy(agfxDevice* device, agfxRenderTarget* renderTarget) {
     if (renderTarget->createInfo.isDepth) {
-        device->descriptorManager->freeDSVSlot(renderTarget->descriptor.index);
+        device->descriptorManager->freeDSVSlot((uint32_t)renderTarget->descriptor.index);
     } else {
-        device->descriptorManager->freeRTVSlot(renderTarget->descriptor.index);
+        device->descriptorManager->freeRTVSlot((uint32_t)renderTarget->descriptor.index);
     }
     device->createInfo.free(renderTarget);
 }
@@ -1736,7 +1737,7 @@ void agfxRenderPassDrawIndexed(agfxRenderPass* renderPass, agfxBuffer* indexBuff
     D3D12_INDEX_BUFFER_VIEW ibv = {};
 	ibv.BufferLocation = indexBuffer->d3d12Resource->GetGPUVirtualAddress();
 	ibv.Format = indexBuffer->createInfo.stride == 2 ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
-	ibv.SizeInBytes = indexBuffer->createInfo.size;
+	ibv.SizeInBytes = static_cast<UINT>(indexBuffer->createInfo.size);
 
 	renderPass->commandBuffer->d3d12CommandList->IASetIndexBuffer(&ibv);
     renderPass->commandBuffer->d3d12CommandList->DrawIndexedInstanced(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
@@ -2017,7 +2018,7 @@ void agfxRenderPassExecuteIndirectBundle(agfxRenderPass* renderPass, agfxIndirec
         D3D12_INDEX_BUFFER_VIEW ibv = {};
         ibv.BufferLocation = executeInfo->indexBuffer->d3d12Resource->GetGPUVirtualAddress();
         ibv.Format = executeInfo->indexBuffer->createInfo.stride == 2 ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
-        ibv.SizeInBytes = executeInfo->indexBuffer->createInfo.size;
+        ibv.SizeInBytes = static_cast<UINT>(executeInfo->indexBuffer->createInfo.size);
         commandList->IASetIndexBuffer(&ibv);
     }
 
@@ -2086,13 +2087,13 @@ D3D12_SHADER_RESOURCE_VIEW_DESC agfxBufferViewTypeToD3D12ShaderResourceViewDesc(
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
         srvDesc.Buffer.FirstElement = createInfo->offset / 4;
-        srvDesc.Buffer.NumElements = (createInfo->buffer->createInfo.size - createInfo->offset) / 4;
+        srvDesc.Buffer.NumElements = static_cast<UINT>((createInfo->buffer->createInfo.size - createInfo->offset) / 4);
         srvDesc.Buffer.StructureByteStride = 0;
     } else if (createInfo->type == AGFX_BUFFER_VIEW_TYPE_STRUCTURED) {
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvDesc.Buffer.FirstElement = createInfo->offset / createInfo->buffer->createInfo.stride;
-        srvDesc.Buffer.NumElements = (createInfo->buffer->createInfo.size - createInfo->offset) / createInfo->buffer->createInfo.stride;
-        srvDesc.Buffer.StructureByteStride = createInfo->buffer->createInfo.stride;
+        srvDesc.Buffer.NumElements = static_cast<UINT>((createInfo->buffer->createInfo.size - createInfo->offset) / createInfo->buffer->createInfo.stride);
+        srvDesc.Buffer.StructureByteStride = static_cast<UINT>(createInfo->buffer->createInfo.stride);
         srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
     }
     return srvDesc;
@@ -2105,13 +2106,13 @@ D3D12_UNORDERED_ACCESS_VIEW_DESC agfxBufferViewTypeToD3D12UnorderedAccessViewDes
     if (createInfo->type == AGFX_BUFFER_VIEW_TYPE_RAW) {
         uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
         uavDesc.Buffer.FirstElement = createInfo->offset / 4;
-        uavDesc.Buffer.NumElements = (createInfo->buffer->createInfo.size - createInfo->offset) / 4;
+        uavDesc.Buffer.NumElements = static_cast<UINT>((createInfo->buffer->createInfo.size - createInfo->offset) / 4);
         uavDesc.Buffer.StructureByteStride = 0;
         uavDesc.Format = DXGI_FORMAT_R32_TYPELESS;
     } else if (createInfo->type == AGFX_BUFFER_VIEW_TYPE_STRUCTURED) {
         uavDesc.Buffer.FirstElement = createInfo->offset / createInfo->buffer->createInfo.stride;
-        uavDesc.Buffer.NumElements = (createInfo->buffer->createInfo.size - createInfo->offset) / createInfo->buffer->createInfo.stride;
-        uavDesc.Buffer.StructureByteStride = createInfo->buffer->createInfo.stride;
+        uavDesc.Buffer.NumElements = static_cast<UINT>((createInfo->buffer->createInfo.size - createInfo->offset) / createInfo->buffer->createInfo.stride);
+        uavDesc.Buffer.StructureByteStride = static_cast<UINT>(createInfo->buffer->createInfo.stride);
         uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
     }
     return uavDesc;
@@ -2278,7 +2279,7 @@ D3D12_SAMPLER_DESC agfxSamplerCreateInfoToD3D12SamplerDesc(agfxSamplerCreateInfo
     samplerDesc.AddressV = agfxSamplerAddressModeToD3D12TextureAddressMode(createInfo->addressModeV);
     samplerDesc.AddressW = agfxSamplerAddressModeToD3D12TextureAddressMode(createInfo->addressModeW);
     samplerDesc.MipLODBias = createInfo->mipLodBias;
-    samplerDesc.MaxAnisotropy = createInfo->maxAnisotropy;
+    samplerDesc.MaxAnisotropy = static_cast<UINT>(createInfo->maxAnisotropy);
     samplerDesc.ComparisonFunc = agfxComparisonFunctionToD3D12ComparisonFunc(createInfo->comparisonFunction);
     samplerDesc.MinLOD = createInfo->minLod;
     samplerDesc.MaxLOD = createInfo->maxLod;

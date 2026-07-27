@@ -23,10 +23,7 @@ target("agfx_shader_cli")
 
 target("agfx")
     set_kind("static")
-
-    if is_plat("windows") then
-        set_runtimes("MT")
-    end
+    set_warnings("all", "error")
 
     if is_plat("macosx") then
         add_files("agfx/agfx_metal4.mm")
