@@ -63,6 +63,20 @@ static inline D3D12_CPU_DESCRIPTOR_HANDLE agfxGetCPUDescriptorHandleForHeapStart
 #endif
 }
 
+// Same direct-return-vs-out-param ABI split as agfxGetCPUDescriptorHandleForHeapStart, but this one
+// matches the vendored d3d12.h's own guard for GetResourceAllocationInfo (_MSC_VER || !_WIN32) rather
+// than the older shim's (_MSC_VER && !__clang__) -- the two disagree under clang-cl, which is a
+// pre-existing quirk of the older shim, not something introduced here.
+static inline D3D12_RESOURCE_ALLOCATION_INFO agfxGetResourceAllocationInfo(ID3D12Device7* device, const D3D12_RESOURCE_DESC* desc) {
+#if defined(_MSC_VER) || !defined(_WIN32)
+    return device->GetResourceAllocationInfo(0, 1, desc);
+#else
+    D3D12_RESOURCE_ALLOCATION_INFO info;
+    device->GetResourceAllocationInfo(&info, 0, 1, desc);
+    return info;
+#endif
+}
+
 struct agfxCommandBuffer {
     ID3D12GraphicsCommandList10* d3d12CommandList;
     ID3D12CommandAllocator* d3d12CommandAllocator;
@@ -79,6 +93,11 @@ struct agfxTexture {
 struct agfxBuffer {
     ID3D12Resource* d3d12Resource;
     agfxBufferCreateInfo createInfo;
+};
+
+struct agfxHeap {
+    ID3D12Heap* d3d12Heap;
+    agfxHeapCreateInfo createInfo;
 };
 
 struct agfxCommandQueue {
@@ -305,6 +324,12 @@ struct agfxDevice {
     ID3D12CommandSignature* indirectSignatures[4]; // indexed by agfxIndirectBundleType
 
     agfxDescriptorManager* descriptorManager;
+
+    // Resource heap tier 2 (mixed buffers/textures/RT-DS in one heap), queried once at device
+    // creation. Unlike Enhanced Barriers this is not fatal to device creation -- a tier-1 device
+    // still works for everything except placement heaps -- so agfxHeapCreate is the one that fails
+    // loudly if this is false.
+    bool supportsPlacementHeaps;
 };
 
 static uint32_t agfxIndirectBundleTypeStride(agfxIndirectBundleType type) {
@@ -395,6 +420,15 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
         createInfo->free(device);
         return NULL;
     }
+
+    // Placement heaps require resource heap tier 2 (mixed buffer/texture/RT-DS categories in one
+    // heap); tier 1 would need per-category heaps AGFX has no plumbing for. Unlike Enhanced
+    // Barriers above, a tier-1 adapter still works for everything except agfxHeapCreate, so this
+    // does not fail device creation -- it is just cached for agfxHeapCreate to check.
+    D3D12_FEATURE_DATA_D3D12_OPTIONS options = {};
+    device->supportsPlacementHeaps =
+        SUCCEEDED(device->d3d12Device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options))) &&
+        options.ResourceHeapTier >= D3D12_RESOURCE_HEAP_TIER_2;
 
     if (createInfo->enableValidation) {
         if (FAILED(device->d3d12Device->QueryInterface(IID_PPV_ARGS(&device->d3d12DebugDevice)))) {
@@ -854,15 +888,52 @@ void agfxCommandBufferMemoryBarrier(agfxCommandBuffer* commandBuffer, agfxResour
     commandBuffer->d3d12CommandList->Barrier(1, &group);
 }
 
+void agfxCommandBufferAliasingBarrier(agfxCommandBuffer* commandBuffer, agfxTexture* incomingTexture, agfxResourceState outgoingState, agfxResourceState incomingState, agfxBool agglomerate) {
+    // Enhanced Barriers has no distinct aliasing barrier type -- D3D12_BARRIER_TYPE only has
+    // GLOBAL/TEXTURE/BUFFER. The spec's aliasing workflow has two halves, and both are needed
+    // (see notes/ALIASING.md):
+    //
+    // - A GLOBAL barrier carrying the outgoing state's real sync AND access scopes. Texture-barrier
+    //   access scopes cover only their own resource, and the incoming texture's AccessBefore is
+    //   NO_ACCESS by definition, so this global barrier is the only thing here that flushes the
+    //   outgoing resource's pending writes. Without it those writes can land in the shared memory
+    //   after the incoming resource's first writes -- the hazard AliasHazardOrdering reproduces.
+    // - A TEXTURE barrier on the incoming resource activating it: NO_ACCESS and UNDEFINED say "this
+    //   resource has nothing of its own to flush and no layout worth interpreting", and DISCARD
+    //   drops stale compression metadata. These sentinels are deliberately hardcoded rather than
+    //   routed through agfxResourceStateToD3D12BarrierAccess/Layout: they are not GPU-visible
+    //   states, and adding an AGFX_RESOURCE_STATE_UNDEFINED would force every other call site in
+    //   the API to defend against a value only this one function can use.
+    D3D12_BARRIER_ACCESS accessBefore = agfxResourceStateToD3D12BarrierAccess(outgoingState);
+    D3D12_BARRIER_ACCESS accessAfter = agfxResourceStateToD3D12BarrierAccess(incomingState);
+
+    // Same clamp as agfxCommandBufferMemoryBarrier: D3D12 rejects a global barrier whose
+    // AccessBefore is COMMON and AccessAfter is not.
+    if (accessBefore == D3D12_BARRIER_ACCESS_COMMON) {
+        accessAfter = D3D12_BARRIER_ACCESS_COMMON;
+    }
+
+    CD3DX12_GLOBAL_BARRIER globalBarrier(
+        agfxResourceStateToD3D12BarrierSync(outgoingState), agfxResourceStateToD3D12BarrierSync(incomingState),
+        accessBefore, accessAfter);
+
+    CD3DX12_TEXTURE_BARRIER textureBarrier(
+        agfxResourceStateToD3D12BarrierSync(outgoingState), agfxResourceStateToD3D12BarrierSync(incomingState),
+        D3D12_BARRIER_ACCESS_NO_ACCESS,                     agfxResourceStateToD3D12BarrierAccess(incomingState),
+        D3D12_BARRIER_LAYOUT_UNDEFINED,                     agfxResourceStateToD3D12BarrierLayout(incomingState),
+        incomingTexture->d3d12Resource, CD3DX12_BARRIER_SUBRESOURCE_RANGE(0xffffffff),
+        D3D12_TEXTURE_BARRIER_FLAG_DISCARD);
+
+    CD3DX12_BARRIER_GROUP groups[] = {
+        CD3DX12_BARRIER_GROUP(1, &globalBarrier),
+        CD3DX12_BARRIER_GROUP(1, &textureBarrier),
+    };
+    commandBuffer->d3d12CommandList->Barrier(_countof(groups), groups);
+}
+
 // Texture
 
-agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* createInfo) {
-    agfxTexture* texture = (agfxTexture*)device->createInfo.allocate(sizeof(agfxTexture));
-    memcpy(&texture->createInfo, createInfo, sizeof(agfxTextureCreateInfo));
-
-    D3D12_HEAP_PROPERTIES heapProperties = {};
-    heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
-
+static D3D12_RESOURCE_DESC agfxTextureResourceDesc(const agfxTextureCreateInfo* createInfo) {
     D3D12_RESOURCE_DESC resourceDesc = {};
     resourceDesc.Dimension = agfxTextureTypeToD3D12ResourceDimension(createInfo->type);
     resourceDesc.Width = createInfo->width;
@@ -873,15 +944,48 @@ agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* 
     resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     resourceDesc.Format = agfxTextureFormatToDXGIFormat(createInfo->format);
     resourceDesc.Flags = agfxTextureUsageToD3D12ResourceFlags(createInfo->usage);
-    
-    if (FAILED(device->d3d12Device->CreateCommittedResource(
-        &heapProperties,
-        D3D12_HEAP_FLAG_NONE,
-        &resourceDesc,
-        D3D12_RESOURCE_STATE_COMMON,
-        nullptr,
-        IID_PPV_ARGS(&texture->d3d12Resource)))) {
-        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxTextureCreate: CreateCommittedResource failed");
+    return resourceDesc;
+}
+
+agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* createInfo) {
+    agfxTexture* texture = (agfxTexture*)device->createInfo.allocate(sizeof(agfxTexture));
+    memcpy(&texture->createInfo, createInfo, sizeof(agfxTextureCreateInfo));
+
+    D3D12_RESOURCE_DESC resourceDesc = agfxTextureResourceDesc(createInfo);
+
+    HRESULT hr;
+    if (createInfo->heap) {
+        if (createInfo->heap->createInfo.memoryType != AGFX_BUFFER_MEMORY_TYPE_GPU_ONLY) {
+            agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxTextureCreate: textures may only be placed in AGFX_BUFFER_MEMORY_TYPE_GPU_ONLY heaps");
+            device->createInfo.free(texture);
+            return NULL;
+        }
+        hr = device->d3d12Device->CreatePlacedResource(
+            createInfo->heap->d3d12Heap,
+            createInfo->heapOffset,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_COMMON,
+            nullptr,
+            IID_PPV_ARGS(&texture->d3d12Resource));
+        if (FAILED(hr)) {
+            agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxTextureCreate: CreatePlacedResource failed");
+        }
+    } else {
+        D3D12_HEAP_PROPERTIES heapProperties = {};
+        heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+        hr = device->d3d12Device->CreateCommittedResource(
+            &heapProperties,
+            D3D12_HEAP_FLAG_NONE,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_COMMON,
+            nullptr,
+            IID_PPV_ARGS(&texture->d3d12Resource));
+        if (FAILED(hr)) {
+            agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxTextureCreate: CreateCommittedResource failed");
+        }
+    }
+    if (FAILED(hr)) {
         device->createInfo.free(texture);
         return NULL;
     }
@@ -907,13 +1011,7 @@ void agfxTextureSetName(agfxTexture* texture, const char* name) {
 }
 
 // Buffer
-agfxBuffer* agfxBufferCreate(agfxDevice* device, const agfxBufferCreateInfo* createInfo) {
-    agfxBuffer* buffer = (agfxBuffer*)device->createInfo.allocate(sizeof(agfxBuffer));
-    memcpy(&buffer->createInfo, createInfo, sizeof(agfxBufferCreateInfo));
-
-    D3D12_HEAP_PROPERTIES heapProperties = {};
-    heapProperties.Type = agfxBufferMemoryTypeToD3D12HeapType(createInfo->memoryType);
-
+static D3D12_RESOURCE_DESC agfxBufferResourceDesc(const agfxBufferCreateInfo* createInfo) {
     D3D12_RESOURCE_DESC resourceDesc = {};
     resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     resourceDesc.Width = createInfo->size;
@@ -924,15 +1022,43 @@ agfxBuffer* agfxBufferCreate(agfxDevice* device, const agfxBufferCreateInfo* cre
     resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
     resourceDesc.Flags = agfxBufferUsageToD3D12ResourceFlags(createInfo->usage);
+    return resourceDesc;
+}
 
-    if (FAILED(device->d3d12Device->CreateCommittedResource(
-        &heapProperties,
-        D3D12_HEAP_FLAG_NONE,
-        &resourceDesc,
-        D3D12_RESOURCE_STATE_COMMON,
-        nullptr,
-        IID_PPV_ARGS(&buffer->d3d12Resource)))) {
-        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxBufferCreate: CreateCommittedResource failed");
+agfxBuffer* agfxBufferCreate(agfxDevice* device, const agfxBufferCreateInfo* createInfo) {
+    agfxBuffer* buffer = (agfxBuffer*)device->createInfo.allocate(sizeof(agfxBuffer));
+    memcpy(&buffer->createInfo, createInfo, sizeof(agfxBufferCreateInfo));
+
+    D3D12_RESOURCE_DESC resourceDesc = agfxBufferResourceDesc(createInfo);
+
+    HRESULT hr;
+    if (createInfo->heap) {
+        hr = device->d3d12Device->CreatePlacedResource(
+            createInfo->heap->d3d12Heap,
+            createInfo->heapOffset,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_COMMON,
+            nullptr,
+            IID_PPV_ARGS(&buffer->d3d12Resource));
+        if (FAILED(hr)) {
+            agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxBufferCreate: CreatePlacedResource failed");
+        }
+    } else {
+        D3D12_HEAP_PROPERTIES heapProperties = {};
+        heapProperties.Type = agfxBufferMemoryTypeToD3D12HeapType(createInfo->memoryType);
+
+        hr = device->d3d12Device->CreateCommittedResource(
+            &heapProperties,
+            D3D12_HEAP_FLAG_NONE,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_COMMON,
+            nullptr,
+            IID_PPV_ARGS(&buffer->d3d12Resource));
+        if (FAILED(hr)) {
+            agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxBufferCreate: CreateCommittedResource failed");
+        }
+    }
+    if (FAILED(hr)) {
         device->createInfo.free(buffer);
         return NULL;
     }
@@ -965,6 +1091,51 @@ void agfxBufferSetName(agfxBuffer* buffer, const char* name) {
 
 void agfxBufferGetInfo(agfxBuffer* buffer, agfxBufferCreateInfo* info) {
     memcpy(info, &buffer->createInfo, sizeof(agfxBufferCreateInfo));
+}
+
+// Heap
+
+agfxHeap* agfxHeapCreate(agfxDevice* device, const agfxHeapCreateInfo* createInfo) {
+    if (!device->supportsPlacementHeaps) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxHeapCreate: adapter reports D3D12 resource heap tier 1; placement heaps require tier 2");
+        return NULL;
+    }
+
+    agfxHeap* heap = (agfxHeap*)device->createInfo.allocate(sizeof(agfxHeap));
+    memcpy(&heap->createInfo, createInfo, sizeof(agfxHeapCreateInfo));
+
+    const uint64_t alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+    D3D12_HEAP_DESC heapDesc = {};
+    heapDesc.SizeInBytes = (createInfo->size + alignment - 1) & ~(alignment - 1);
+    heapDesc.Alignment = 0;
+    heapDesc.Properties.Type = agfxBufferMemoryTypeToD3D12HeapType(createInfo->memoryType);
+    heapDesc.Flags = D3D12_HEAP_FLAG_ALLOW_ALL_BUFFERS_AND_TEXTURES;
+
+    if (FAILED(device->d3d12Device->CreateHeap(&heapDesc, IID_PPV_ARGS(&heap->d3d12Heap)))) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxHeapCreate: CreateHeap failed");
+        device->createInfo.free(heap);
+        return NULL;
+    }
+    return heap;
+}
+
+void agfxHeapDestroy(agfxDevice* device, agfxHeap* heap) {
+    if (heap->d3d12Heap) heap->d3d12Heap->Release();
+    device->createInfo.free(heap);
+}
+
+void agfxDeviceGetTextureAllocationInfo(agfxDevice* device, const agfxTextureCreateInfo* createInfo, agfxAllocationInfo* info) {
+    const D3D12_RESOURCE_DESC resourceDesc = agfxTextureResourceDesc(createInfo);
+    const D3D12_RESOURCE_ALLOCATION_INFO allocInfo = agfxGetResourceAllocationInfo(device->d3d12Device, &resourceDesc);
+    info->size = allocInfo.SizeInBytes;
+    info->alignment = allocInfo.Alignment;
+}
+
+void agfxDeviceGetBufferAllocationInfo(agfxDevice* device, const agfxBufferCreateInfo* createInfo, agfxAllocationInfo* info) {
+    const D3D12_RESOURCE_DESC resourceDesc = agfxBufferResourceDesc(createInfo);
+    const D3D12_RESOURCE_ALLOCATION_INFO allocInfo = agfxGetResourceAllocationInfo(device->d3d12Device, &resourceDesc);
+    info->size = allocInfo.SizeInBytes;
+    info->alignment = allocInfo.Alignment;
 }
 
 // Acceleration structure

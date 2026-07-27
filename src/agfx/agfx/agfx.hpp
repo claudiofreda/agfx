@@ -96,6 +96,15 @@ namespace agfx
         }
     };
 
+    /// @brief A memory heap that textures and buffers can be placed into at explicit offsets. Does
+    /// not keep placed resources alive or extend their lifetime -- destroying a Heap while a
+    /// resource is still placed in it is the caller's bug, not something this wrapper detects.
+    class Heap : public Handle<agfxHeap, agfxHeapDestroy>
+    {
+    public:
+        using Handle::Handle;
+    };
+
     class Texture : public Handle<agfxTexture, agfxTextureDestroy>
     {
     public:
@@ -436,6 +445,14 @@ namespace agfx
             agfxCommandBufferMemoryBarrier(mHandle, oldState, newState, agglomerate);
         }
 
+        /// @brief Records the transition from one aliased texture to another sharing the same
+        /// placement-heap memory -- see agfxCommandBufferAliasingBarrier. Buffers/acceleration
+        /// structures need no equivalent overload: use MemoryBarrier directly for those.
+        void AliasingBarrier(Texture& incomingTexture, agfxResourceState outgoingState, agfxResourceState incomingState, bool agglomerate = true)
+        {
+            agfxCommandBufferAliasingBarrier(mHandle, incomingTexture, outgoingState, incomingState, agglomerate);
+        }
+
         void WriteTimestamp(QueryPool& pool, uint32_t index) { agfxCommandBufferWriteTimestamp(mHandle, pool, index); }
 
         void ResolveQueryPool(QueryPool& pool, uint32_t firstIndex, uint32_t count)
@@ -567,6 +584,25 @@ namespace agfx
         Buffer CreateBuffer(const agfxBufferCreateInfo& info)
         {
             return Buffer(mDevice, agfxBufferCreate(mDevice, &info));
+        }
+
+        Heap CreateHeap(const agfxHeapCreateInfo& info)
+        {
+            return Heap(mDevice, agfxHeapCreate(mDevice, &info));
+        }
+
+        agfxAllocationInfo GetTextureAllocationInfo(const agfxTextureCreateInfo& info) const
+        {
+            agfxAllocationInfo out{};
+            agfxDeviceGetTextureAllocationInfo(mDevice, &info, &out);
+            return out;
+        }
+
+        agfxAllocationInfo GetBufferAllocationInfo(const agfxBufferCreateInfo& info) const
+        {
+            agfxAllocationInfo out{};
+            agfxDeviceGetBufferAllocationInfo(mDevice, &info, &out);
+            return out;
         }
 
         TextureView CreateTextureView(const agfxTextureViewCreateInfo& info)

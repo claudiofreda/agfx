@@ -1090,6 +1090,18 @@ void agfxCommandBufferMemoryBarrier(agfxCommandBuffer* commandBuffer, agfxResour
     }
 }
 
+void agfxCommandBufferAliasingBarrier(agfxCommandBuffer* commandBuffer, agfxTexture* incomingTexture, agfxResourceState outgoingState, agfxResourceState incomingState, agfxBool agglomerate) {
+    // Identical to agfxCommandBufferMemoryBarrier: the tracker is already resource-agnostic (it
+    // consumes only producer/consumer stage masks derived from the states, see
+    // agfxMetal4BarrierTracker::addBarrier above), so the incoming texture pointer plays no role
+    // here, same as it plays none on the other three barrier entry points -- see notes/ALIASING.md.
+    if (!agglomerate) return;
+    commandBuffer->barrierTracker.addBarrier(outgoingState, incomingState);
+    if (commandBuffer->currentEncoder) {
+        commandBuffer->barrierTracker.encodeInline(commandBuffer->currentEncoder, commandBuffer->currentEncoderStages);
+    }
+}
+
 // Texture
 struct agfxTexture {
     agfxTextureCreateInfo createInfo;
@@ -1099,6 +1111,15 @@ struct agfxTexture {
 agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* createInfo) {
     agfxTexture* texture = (agfxTexture*)device->createInfo.allocate(sizeof(agfxTexture));
     memcpy(&texture->createInfo, createInfo, sizeof(agfxTextureCreateInfo));
+
+    // Placement heaps are not implemented on Metal yet -- see notes/ALIASING.md. Fail loudly rather
+    // than silently falling back to a committed allocation, which would make an aliasing test
+    // "pass" on Metal while proving nothing.
+    if (createInfo->heap) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxTextureCreate: placed resources are not implemented on the Metal backend yet");
+        device->createInfo.free(texture);
+        return nullptr;
+    }
 
     MTLTextureDescriptor* descriptor = [MTLTextureDescriptor new];
     descriptor.textureType = agfxTextureTypeToMTL(createInfo->type);
@@ -1264,6 +1285,15 @@ void agfxComputePassCompactAccelerationStructure(agfxComputePass* computePass, a
 agfxBuffer* agfxBufferCreate(agfxDevice* device, const agfxBufferCreateInfo* createInfo) {
     agfxBuffer* buffer = (agfxBuffer*)device->createInfo.allocate(sizeof(agfxBuffer));
     memcpy(&buffer->createInfo, createInfo, sizeof(agfxBufferCreateInfo));
+
+    // See agfxTextureCreate: placement heaps are not implemented on Metal yet, and silently
+    // falling back to a committed allocation would hide that rather than surface it.
+    if (createInfo->heap) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxBufferCreate: placed resources are not implemented on the Metal backend yet");
+        device->createInfo.free(buffer);
+        return nullptr;
+    }
+
     buffer->buffer = [device->device newBufferWithLength:createInfo->size options:MTLResourceStorageModeShared];
     if (!buffer->buffer) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxBufferCreate: newBufferWithLength failed");
@@ -1292,6 +1322,37 @@ void agfxBufferSetName(agfxBuffer* buffer, const char* name) {
 
 void agfxBufferGetInfo(agfxBuffer* buffer, agfxBufferCreateInfo* info) {
     memcpy(info, &buffer->createInfo, sizeof(agfxBufferCreateInfo));
+}
+
+// Heap
+//
+// Not implemented yet. The real design (MTLHeapTypePlacement + MTLStorageModePrivate,
+// heapTextureSizeAndAlignWithDescriptor:/heapBufferSizeAndAlignWithLength:options:, adding the heap
+// to the residency set once at create and skipping the per-resource addAllocation/removeAllocation
+// above and at agfx_metal4.mm's buffer create/destroy when heap != nullptr) is written up in
+// notes/ALIASING.md ("Implementation plan" §1/§3). agfxTextureCreate/agfxBufferCreate above already
+// reject any createInfo->heap up front, so agfxHeapCreate returning nullptr is the only way a caller
+// can reach this: there is no path that produces a heap object with nothing placed in it.
+
+agfxHeap* agfxHeapCreate(agfxDevice* device, const agfxHeapCreateInfo* createInfo) {
+    agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxHeapCreate: placement heaps are not implemented on the Metal backend yet");
+    return nullptr;
+}
+
+void agfxHeapDestroy(agfxDevice* device, agfxHeap* heap) {
+    // Only ever called with the nullptr agfxHeapCreate always returns above.
+}
+
+void agfxDeviceGetTextureAllocationInfo(agfxDevice* device, const agfxTextureCreateInfo* createInfo, agfxAllocationInfo* info) {
+    agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxDeviceGetTextureAllocationInfo: not implemented on the Metal backend yet");
+    info->size = 0;
+    info->alignment = 0;
+}
+
+void agfxDeviceGetBufferAllocationInfo(agfxDevice* device, const agfxBufferCreateInfo* createInfo, agfxAllocationInfo* info) {
+    agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxDeviceGetBufferAllocationInfo: not implemented on the Metal backend yet");
+    info->size = 0;
+    info->alignment = 0;
 }
 
 // Texture view

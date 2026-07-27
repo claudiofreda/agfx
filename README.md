@@ -69,7 +69,6 @@ Bindings for Zig, Rust and Odin can be find [here](https://github.com/AmelieHein
 ## Missing features
 
 - Vulkan, PS5, Switch 2 backend
-- Resource aliasing
 - Sparse resources (unplanned)
 - Support for Slang + BDA (unplanned)
 
@@ -101,6 +100,7 @@ On Windows:
 - agfx_shader: dxcompiler.lib
 
 ## Changelogs
+- v1.4.0: Resource aliasing
 - v1.3.3: D3D12 debug markers
 - v1.3.2: Barrier rework
 - v1.3.1: Pipeline cache update

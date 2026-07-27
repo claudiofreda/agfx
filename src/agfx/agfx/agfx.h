@@ -44,6 +44,10 @@ typedef struct agfxDevice agfxDevice;
 /// @brief A texture object. Represents a GPU texture resource.
 typedef struct agfxTexture agfxTexture;
 
+/// @brief A memory heap that textures and buffers can be placed into at explicit offsets, enabling
+///        resource aliasing (two resources sharing the same memory at different times).
+typedef struct agfxHeap agfxHeap;
+
 /// @brief A fence object. Used for GPU-CPU synchronization.
 typedef struct agfxFence agfxFence;
 
@@ -365,6 +369,29 @@ void agfxCommandBufferTextureBarrier(agfxCommandBuffer* commandBuffer, agfxTextu
 ///        queued and flushed at the next pass boundary; D3D12 ignores this flag and always transitions immediately.
 void agfxCommandBufferMemoryBarrier(agfxCommandBuffer* commandBuffer, agfxResourceState oldState, agfxResourceState newState, agfxBool agglomerate);
 
+/// @brief Records the transition from one aliased texture to another sharing the same placement-heap
+///        memory. Aliased resources are invisible to any usage-derived dependency tracker -- they are
+///        different handles with no shared subresource -- so this barrier IS the dependency edge
+///        between the outgoing resource's last writer and the incoming resource's first user. Omitting
+///        it does not merely lose an optimization; it permits the two resources' passes to overlap and
+///        corrupt each other's memory. Only the incoming texture is named: the outgoing resource
+///        contributes its state to the barrier, not a pointer, since by the time this is recorded it
+///        may already have been destroyed.
+/// @param commandBuffer A pointer to the agfxCommandBuffer to record the barrier in.
+/// @param incomingTexture The texture being switched *to*. Its previous contents are undefined --
+///        initialize it before reading (AGFX_LOAD_OPERATION_CLEAR/DONT_CARE on the first render pass
+///        that touches it, or a full compute overwrite).
+/// @param outgoingState The resource state the *outgoing* aliased resource's last GPU access used.
+///        Must be the real, honest prior state: it is what the GPU is actually made to wait on.
+/// @param incomingState The resource state incomingTexture's first use after this barrier will be in.
+/// @param agglomerate See the note on agfxCommandBufferTextureBarrier: on Metal, pass true so the
+///        barrier is queued and flushed at the next pass boundary -- passing false makes this barrier
+///        a no-op, silently reintroducing the corruption case described above. D3D12 ignores this flag.
+/// @note Buffers and acceleration structures need no dedicated aliasing entry point: their alias
+///       transition is just agfxCommandBufferMemoryBarrier(cmd, outgoingState, incomingState, true),
+///       since a resource-less memory barrier has no layout to misinterpret.
+void agfxCommandBufferAliasingBarrier(agfxCommandBuffer* commandBuffer, agfxTexture* incomingTexture, agfxResourceState outgoingState, agfxResourceState incomingState, agfxBool agglomerate);
+
 // Texture
 /// @brief The pixel format of a texture.
 /// @note BCn formats require desktop/BC-texture-compression support (D3D12; Metal via supportsBCTextureCompression).
@@ -487,6 +514,16 @@ typedef struct agfxTextureCreateInfo {
     uint32_t depthOrArrayLayers;
     /// @brief The number of mip levels to allocate.
     uint32_t mipLevels;
+    /// @brief Optional heap to place this resource in. Leave nullptr for a committed (dedicated)
+    ///        allocation -- the default, and what every texture used before heaps existed. Two
+    ///        resources placed at overlapping offset ranges in one heap alias the same memory: only
+    ///        one of them may be live at a time, and the switch between them must be marked with
+    ///        agfxCommandBufferAliasingBarrier.
+    agfxHeap* heap;
+    /// @brief Byte offset into `heap`. Ignored when heap is nullptr. Must be a multiple of the
+    ///        alignment reported by agfxDeviceGetTextureAllocationInfo for this exact create info --
+    ///        alignment differs by backend, so never hardcode it.
+    uint64_t heapOffset;
 } agfxTextureCreateInfo;
 
 /// @brief An enum describing a type of acceleration structure
@@ -955,6 +992,16 @@ typedef struct agfxBufferCreateInfo {
     agfxBufferUsage usage;
     /// @brief Which memory type/heap the buffer is allocated from.
     agfxBufferMemoryType memoryType;
+    /// @brief Optional heap to place this resource in. Leave nullptr for a committed (dedicated)
+    ///        allocation -- the default, and what every buffer used before heaps existed. Two
+    ///        resources placed at overlapping offset ranges in one heap alias the same memory: only
+    ///        one of them may be live at a time, and the switch between them must be marked with
+    ///        agfxCommandBufferMemoryBarrier.
+    agfxHeap* heap;
+    /// @brief Byte offset into `heap`. Ignored when heap is nullptr. Must be a multiple of the
+    ///        alignment reported by agfxDeviceGetBufferAllocationInfo for this exact create info --
+    ///        alignment differs by backend, so never hardcode it.
+    uint64_t heapOffset;
 } agfxBufferCreateInfo;
 
 /// @brief Creates a new agfxBuffer with the specified creation info.
@@ -990,6 +1037,54 @@ void agfxBufferSetName(agfxBuffer* buffer, const char* name);
 /// @param buffer A pointer to the agfxBuffer to query.
 /// @param info A pointer to an agfxBufferCreateInfo structure that will be filled with the buffer's creation parameters.
 void agfxBufferGetInfo(agfxBuffer* buffer, agfxBufferCreateInfo* info);
+
+// Heap
+/// @brief The memory footprint a resource needs inside an agfxHeap. Backend-specific: an offset
+///        computed from one backend's numbers is not valid on the other.
+typedef struct agfxAllocationInfo {
+    /// @brief The number of bytes the resource needs, rounded up to the backend's alignment.
+    uint64_t size;
+    /// @brief The byte alignment the resource's heap offset must satisfy.
+    uint64_t alignment;
+} agfxAllocationInfo;
+
+/// @brief A structure containing information for creating an agfxHeap.
+typedef struct agfxHeapCreateInfo {
+    /// @brief The heap's total size in bytes. Rounded up to the backend's heap granularity.
+    uint64_t size;
+    /// @brief Where the heap's memory lives. Reuses agfxBufferMemoryType since it is already the
+    ///        API's only memory-domain enum and maps 1:1 onto the backend heap types; textures may
+    ///        only be placed in AGFX_BUFFER_MEMORY_TYPE_GPU_ONLY heaps.
+    agfxBufferMemoryType memoryType;
+} agfxHeapCreateInfo;
+
+/// @brief Creates a new agfxHeap with the specified creation info.
+/// @param device A pointer to the agfxDevice to create the heap on.
+/// @param createInfo A pointer to an agfxHeapCreateInfo structure containing the creation parameters.
+/// @return A pointer to the newly created agfxHeap, or nullptr on failure (including when the device
+///         does not support placement heaps -- see agfxDeviceGetTextureAllocationInfo).
+agfxHeap* agfxHeapCreate(agfxDevice* device, const agfxHeapCreateInfo* createInfo);
+
+/// @brief Destroys the specified agfxHeap and releases all associated resources.
+/// @param device A pointer to the agfxDevice that owns the heap.
+/// @param heap A pointer to the agfxHeap to destroy.
+/// @note Resources placed in a heap do not keep it alive or extend its lifetime: destroy every
+///       resource placed in a heap before destroying the heap itself.
+void agfxHeapDestroy(agfxDevice* device, agfxHeap* heap);
+
+/// @brief Queries the size and alignment a texture with the given creation info would need if placed
+///        in a heap, for sizing the heap and computing a valid agfxTextureCreateInfo::heapOffset.
+/// @param device A pointer to the agfxDevice to query.
+/// @param createInfo A pointer to the agfxTextureCreateInfo describing the texture that would be created.
+/// @param info A pointer to an agfxAllocationInfo structure that will be filled with the result.
+void agfxDeviceGetTextureAllocationInfo(agfxDevice* device, const agfxTextureCreateInfo* createInfo, agfxAllocationInfo* info);
+
+/// @brief Queries the size and alignment a buffer with the given creation info would need if placed
+///        in a heap, for sizing the heap and computing a valid agfxBufferCreateInfo::heapOffset.
+/// @param device A pointer to the agfxDevice to query.
+/// @param createInfo A pointer to the agfxBufferCreateInfo describing the buffer that would be created.
+/// @param info A pointer to an agfxAllocationInfo structure that will be filled with the result.
+void agfxDeviceGetBufferAllocationInfo(agfxDevice* device, const agfxBufferCreateInfo* createInfo, agfxAllocationInfo* info);
 
 // Texture view
 /// @brief A structure containing information for creating an agfxTextureView.
