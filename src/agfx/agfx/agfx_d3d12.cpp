@@ -891,7 +891,7 @@ void agfxCommandBufferMemoryBarrier(agfxCommandBuffer* commandBuffer, agfxResour
 void agfxCommandBufferAliasingBarrier(agfxCommandBuffer* commandBuffer, agfxTexture* incomingTexture, agfxResourceState outgoingState, agfxResourceState incomingState, agfxBool agglomerate) {
     // Enhanced Barriers has no distinct aliasing barrier type -- D3D12_BARRIER_TYPE only has
     // GLOBAL/TEXTURE/BUFFER. The spec's aliasing workflow has two halves, and both are needed
-    // (see notes/ALIASING.md):
+    // both halves are needed:
     //
     // - A GLOBAL barrier carrying the outgoing state's real sync AND access scopes. Texture-barrier
     //   access scopes cover only their own resource, and the incoming texture's AccessBefore is
