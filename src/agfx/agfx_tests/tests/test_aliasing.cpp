@@ -9,9 +9,8 @@
 // usage-derived dependency tracker, aliased resources are invisible: different handles, no shared
 // subresource, so it emits no edge between the last writer of the outgoing resource and the first
 // user of the incoming one. agfxCommandBufferAliasingBarrier (textures) and
-// agfxCommandBufferMemoryBarrier (buffers/acceleration structures) ARE that edge -- see
-// notes/ALIASING.md for the full design rationale, including why this is not something a correctly
-// synchronized RHI can treat as an optional micro-optimization.
+// agfxCommandBufferMemoryBarrier (buffers/acceleration structures) ARE that edge, which is why
+// this is not something a correctly synchronized RHI can treat as an optional micro-optimization.
 //
 // Three tests, in increasing order of directness:
 //
@@ -22,7 +21,7 @@
 //   the accumulator, the test would only ever see the last phase's output.
 // - AliasBufferOverlap: the most direct proof. Two buffers placed at the same heap offset; upload a
 //   pattern through one, alias-barrier, read it back through the other having never written it.
-//   Buffer-to-buffer only, per ALIASING.md -- two buffers at one offset are plain linear memory on
+//   Buffer-to-buffer only, deliberately -- two buffers at one offset are plain linear memory on
 //   both backends and read back deterministically, but D3D12 formally leaves *aliased texture*
 //   contents undefined, so do not "improve" this into a texture test.
 // - AliasHazardOrdering: a race by construction, covering agfxCommandBufferAliasingBarrier
@@ -32,10 +31,9 @@
 //   overlap. Manually verified once with the barrier stripped -- see the note above each test's
 //   registration macro for the result on this backend.
 //
-// All three run against a heap-tier-2 D3D12 device; Metal placement heaps are not implemented yet
-// (agfx_metal4.mm logs and fails resource creation loudly rather than silently falling back to a
-// committed allocation), so these tests are D3D12-only for now and will start passing on Metal once
-// that lands.
+// All three run on both backends: a heap-tier-2 D3D12 device, and MTLHeapTypePlacement on Metal.
+// A tier-1 D3D12 adapter fails agfxHeapCreate, which the allocation-info assertion below catches
+// first.
 
 #include "agfx_tests/test_gpu.h"
 
@@ -513,7 +511,7 @@ AGFX_TEST_BUFFER(AliasHeapTransients, Ez)
 // Everything happens in one command buffer / one submission deliberately: a queue drain between
 // the write into A and the read through B would fully flush GPU memory on its own, subsuming the
 // aliasing barrier and making the test pass regardless of whether agfxCommandBufferMemoryBarrier
-// does anything. See notes/ALIASING.md, "the one case where dropping it is genuinely safe".
+// does anything -- that is the one case where dropping the barrier would be genuinely safe.
 // =============================================================================================
 
 AGFX_TEST_VALIDATION(AliasBufferOverlap, C)
@@ -757,7 +755,7 @@ AGFX_TEST_VALIDATION(AliasBufferOverlap, Ez)
 // A race by construction: a long compute pass keeps writing into the outgoing side of an alias
 // while a short pass is queued to write a known constant into the incoming side right after the
 // alias barrier. Without the barrier, the long pass's tail writes could land after the short pass's
-// -- the corruption case from notes/ALIASING.md, "Why an aliasing barrier is not optional".
+// -- the corruption case an aliasing barrier exists to prevent.
 //
 // Manually verified once with the barrier stripped: <TODO -- fill in after running locally>.
 // =============================================================================================

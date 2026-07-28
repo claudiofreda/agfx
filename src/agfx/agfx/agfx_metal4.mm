@@ -5,6 +5,9 @@
  */
 
 #include "agfx.h"
+
+#define AGFX_EXPOSE_METAL
+#include "agfx_native.h"
 #include <Metal/Metal.h>
 #include <QuartzCore/QuartzCore.h>
 #include <vector>
@@ -46,6 +49,26 @@ struct agfxBuffer {
     agfxBufferCreateInfo createInfo;
     id<MTLBuffer> buffer;
 };
+
+struct agfxHeap {
+    agfxHeapCreateInfo createInfo;
+    id<MTLHeap> heap;
+};
+
+// A placement heap and everything placed in it must agree on storage mode, CPU cache mode and
+// hazard tracking mode, so both sides derive their options from the heap's memory type here.
+// Untracked because AGFX synchronizes explicitly (agfxMetal4BarrierTracker below); it is already
+// the placement-heap default, but stating it on both sides is what makes the match provable.
+static MTLStorageMode agfxHeapStorageMode(agfxBufferMemoryType memoryType) {
+    return (memoryType == AGFX_BUFFER_MEMORY_TYPE_GPU_ONLY) ? MTLStorageModePrivate : MTLStorageModeShared;
+}
+
+static MTLResourceOptions agfxHeapResourceOptions(agfxBufferMemoryType memoryType) {
+    const MTLResourceOptions storage = (agfxHeapStorageMode(memoryType) == MTLStorageModePrivate)
+        ? MTLResourceStorageModePrivate
+        : MTLResourceStorageModeShared;
+    return storage | MTLResourceHazardTrackingModeUntracked;
+}
 
 struct agfxSwapChain {
     agfxSwapChainCreateInfo createInfo;
@@ -1094,7 +1117,7 @@ void agfxCommandBufferAliasingBarrier(agfxCommandBuffer* commandBuffer, agfxText
     // Identical to agfxCommandBufferMemoryBarrier: the tracker is already resource-agnostic (it
     // consumes only producer/consumer stage masks derived from the states, see
     // agfxMetal4BarrierTracker::addBarrier above), so the incoming texture pointer plays no role
-    // here, same as it plays none on the other three barrier entry points -- see notes/ALIASING.md.
+    // here, same as it plays none on the other three barrier entry points.
     if (!agglomerate) return;
     commandBuffer->barrierTracker.addBarrier(outgoingState, incomingState);
     if (commandBuffer->currentEncoder) {
@@ -1108,19 +1131,10 @@ struct agfxTexture {
     id<MTLTexture> texture;
 };
 
-agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* createInfo) {
-    agfxTexture* texture = (agfxTexture*)device->createInfo.allocate(sizeof(agfxTexture));
-    memcpy(&texture->createInfo, createInfo, sizeof(agfxTextureCreateInfo));
-
-    // Placement heaps are not implemented on Metal yet -- see notes/ALIASING.md. Fail loudly rather
-    // than silently falling back to a committed allocation, which would make an aliasing test
-    // "pass" on Metal while proving nothing.
-    if (createInfo->heap) {
-        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxTextureCreate: placed resources are not implemented on the Metal backend yet");
-        device->createInfo.free(texture);
-        return nullptr;
-    }
-
+// Shared by agfxTextureCreate and agfxDeviceGetTextureAllocationInfo: heapTextureSizeAndAlign
+// reports the layout of the descriptor it is handed, so the query has to see the exact descriptor
+// creation will use or the caller places at the wrong alignment.
+static MTLTextureDescriptor* agfxTextureDescriptor(const agfxTextureCreateInfo* createInfo, bool placed) {
     MTLTextureDescriptor* descriptor = [MTLTextureDescriptor new];
     descriptor.textureType = agfxTextureTypeToMTL(createInfo->type);
     descriptor.pixelFormat = agfxPixelFormatToMTL(createInfo->format);
@@ -1130,7 +1144,41 @@ agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* 
     descriptor.depth = descriptor.textureType == MTLTextureType3D ? createInfo->depthOrArrayLayers : 1;
     descriptor.arrayLength = descriptor.textureType == MTLTextureType2DArray ? createInfo->depthOrArrayLayers : 1;
     descriptor.mipmapLevelCount = createInfo->mipLevels;
-    descriptor.resourceOptions = MTLResourceStorageModeShared;
+    // Placed textures live in a GPU_ONLY heap, so they are private and untracked; committed ones
+    // stay shared, which is what the rest of the backend (agfxTextureReplaceRegion in particular)
+    // assumes. A placed texture therefore cannot be written through agfxTextureReplaceRegion --
+    // upload through a staging buffer and a copy pass instead, same as on D3D12.
+    descriptor.resourceOptions = placed ? agfxHeapResourceOptions(AGFX_BUFFER_MEMORY_TYPE_GPU_ONLY)
+                                        : MTLResourceStorageModeShared;
+    return descriptor;
+}
+
+agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* createInfo) {
+    // Mirrors the D3D12 backend's restriction: a texture only makes sense in a GPU-resident heap.
+    if (createInfo->heap && createInfo->heap->createInfo.memoryType != AGFX_BUFFER_MEMORY_TYPE_GPU_ONLY) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxTextureCreate: textures may only be placed in AGFX_BUFFER_MEMORY_TYPE_GPU_ONLY heaps");
+        return nullptr;
+    }
+
+    agfxTexture* texture = (agfxTexture*)device->createInfo.allocate(sizeof(agfxTexture));
+    memcpy(&texture->createInfo, createInfo, sizeof(agfxTextureCreateInfo));
+
+    MTLTextureDescriptor* descriptor = agfxTextureDescriptor(createInfo, createInfo->heap != nullptr);
+
+    if (createInfo->heap) {
+        texture->texture = [createInfo->heap->heap newTextureWithDescriptor:descriptor offset:createInfo->heapOffset];
+        if (!texture->texture) {
+            // Overwhelmingly the caller's offset: it must be a multiple of the alignment
+            // agfxDeviceGetTextureAllocationInfo reported, and offset + size must fit the heap.
+            agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxTextureCreate: newTextureWithDescriptor:offset: failed at heap offset %llu (misaligned or past the end of the heap?)",
+                (unsigned long long)createInfo->heapOffset);
+            device->createInfo.free(texture);
+            return nullptr;
+        }
+        // No addAllocation: the heap itself is in the residency set, which covers everything
+        // placed in it.
+        return texture;
+    }
 
     texture->texture = [device->device newTextureWithDescriptor:descriptor];
     if (!texture->texture) {
@@ -1144,7 +1192,9 @@ agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* 
 }
 
 void agfxTextureDestroy(agfxDevice* device, agfxTexture* texture) {
-    [device->residencySet removeAllocation:texture->texture];
+    if (!texture->createInfo.heap) {
+        [device->residencySet removeAllocation:texture->texture];
+    }
     texture->texture = nil;
     device->createInfo.free(texture);
 }
@@ -1283,15 +1333,30 @@ void agfxComputePassCompactAccelerationStructure(agfxComputePass* computePass, a
 // Buffer
 
 agfxBuffer* agfxBufferCreate(agfxDevice* device, const agfxBufferCreateInfo* createInfo) {
+    // Metal requires a placed resource's storage and cache modes to match its heap's, so the two
+    // memory types have to agree rather than one silently winning.
+    if (createInfo->heap && createInfo->heap->createInfo.memoryType != createInfo->memoryType) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxBufferCreate: buffer memory type %d does not match its heap's (%d)",
+            (int)createInfo->memoryType, (int)createInfo->heap->createInfo.memoryType);
+        return nullptr;
+    }
+
     agfxBuffer* buffer = (agfxBuffer*)device->createInfo.allocate(sizeof(agfxBuffer));
     memcpy(&buffer->createInfo, createInfo, sizeof(agfxBufferCreateInfo));
 
-    // See agfxTextureCreate: placement heaps are not implemented on Metal yet, and silently
-    // falling back to a committed allocation would hide that rather than surface it.
     if (createInfo->heap) {
-        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxBufferCreate: placed resources are not implemented on the Metal backend yet");
-        device->createInfo.free(buffer);
-        return nullptr;
+        buffer->buffer = [createInfo->heap->heap newBufferWithLength:createInfo->size
+                                                             options:agfxHeapResourceOptions(createInfo->memoryType)
+                                                              offset:createInfo->heapOffset];
+        if (!buffer->buffer) {
+            // See agfxTextureCreate: almost always a misaligned or out-of-range heap offset.
+            agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxBufferCreate: newBufferWithLength:options:offset: failed at heap offset %llu (misaligned or past the end of the heap?)",
+                (unsigned long long)createInfo->heapOffset);
+            device->createInfo.free(buffer);
+            return nullptr;
+        }
+        // The heap is already in the residency set; that covers everything placed in it.
+        return buffer;
     }
 
     buffer->buffer = [device->device newBufferWithLength:createInfo->size options:MTLResourceStorageModeShared];
@@ -1305,7 +1370,9 @@ agfxBuffer* agfxBufferCreate(agfxDevice* device, const agfxBufferCreateInfo* cre
 }
 
 void agfxBufferDestroy(agfxDevice* device, agfxBuffer* buffer) {
-    [device->residencySet removeAllocation:buffer->buffer];
+    if (!buffer->createInfo.heap) {
+        [device->residencySet removeAllocation:buffer->buffer];
+    }
     buffer->buffer = nil;
     device->createInfo.free(buffer);
 }
@@ -1326,33 +1393,56 @@ void agfxBufferGetInfo(agfxBuffer* buffer, agfxBufferCreateInfo* info) {
 
 // Heap
 //
-// Not implemented yet. The real design (MTLHeapTypePlacement + MTLStorageModePrivate,
-// heapTextureSizeAndAlignWithDescriptor:/heapBufferSizeAndAlignWithLength:options:, adding the heap
-// to the residency set once at create and skipping the per-resource addAllocation/removeAllocation
-// above and at agfx_metal4.mm's buffer create/destroy when heap != nullptr) is written up in
-// notes/ALIASING.md ("Implementation plan" §1/§3). agfxTextureCreate/agfxBufferCreate above already
-// reject any createInfo->heap up front, so agfxHeapCreate returning nullptr is the only way a caller
-// can reach this: there is no path that produces a heap object with nothing placed in it.
+// MTLHeapTypePlacement is the direct analogue of a D3D12 heap: the app picks every offset and two
+// resources sharing an offset range alias by construction. MTLHeapTypeAutomatic would not do -- it
+// is an allocator that picks offsets itself, so AGFX's heapOffset would have nowhere to go.
+//
+// Unlike D3D12 there is no tier query to gate on; every Metal 4 device supports placement heaps.
 
 agfxHeap* agfxHeapCreate(agfxDevice* device, const agfxHeapCreateInfo* createInfo) {
-    agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxHeapCreate: placement heaps are not implemented on the Metal backend yet");
-    return nullptr;
+    agfxHeap* heap = (agfxHeap*)device->createInfo.allocate(sizeof(agfxHeap));
+    memcpy(&heap->createInfo, createInfo, sizeof(agfxHeapCreateInfo));
+
+    MTLHeapDescriptor* descriptor = [MTLHeapDescriptor new];
+    descriptor.type = MTLHeapTypePlacement;
+    descriptor.size = createInfo->size;
+    descriptor.storageMode = agfxHeapStorageMode(createInfo->memoryType);
+    descriptor.hazardTrackingMode = MTLHazardTrackingModeUntracked;
+
+    heap->heap = [device->device newHeapWithDescriptor:descriptor];
+    if (!heap->heap) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxHeapCreate: newHeapWithDescriptor failed for a %llu byte heap", (unsigned long long)createInfo->size);
+        device->createInfo.free(heap);
+        return nullptr;
+    }
+    // One addAllocation for the whole heap: making a heap resident makes everything placed in it
+    // resident, so placed resources deliberately skip the per-resource add in
+    // agfxTextureCreate/agfxBufferCreate.
+    [device->residencySet addAllocation:heap->heap];
+
+    return heap;
 }
 
 void agfxHeapDestroy(agfxDevice* device, agfxHeap* heap) {
-    // Only ever called with the nullptr agfxHeapCreate always returns above.
+    [device->residencySet removeAllocation:heap->heap];
+    heap->heap = nil;
+    device->createInfo.free(heap);
 }
 
 void agfxDeviceGetTextureAllocationInfo(agfxDevice* device, const agfxTextureCreateInfo* createInfo, agfxAllocationInfo* info) {
-    agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxDeviceGetTextureAllocationInfo: not implemented on the Metal backend yet");
-    info->size = 0;
-    info->alignment = 0;
+    // Always query the placed flavour of the descriptor, whatever the caller left in
+    // createInfo->heap: this reports what placing the texture would cost, and the caller is asking
+    // precisely so it can size a heap and pick an offset.
+    const MTLSizeAndAlign sizeAndAlign = [device->device heapTextureSizeAndAlignWithDescriptor:agfxTextureDescriptor(createInfo, /*placed*/ true)];
+    info->size = sizeAndAlign.size;
+    info->alignment = sizeAndAlign.align;
 }
 
 void agfxDeviceGetBufferAllocationInfo(agfxDevice* device, const agfxBufferCreateInfo* createInfo, agfxAllocationInfo* info) {
-    agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxDeviceGetBufferAllocationInfo: not implemented on the Metal backend yet");
-    info->size = 0;
-    info->alignment = 0;
+    const MTLSizeAndAlign sizeAndAlign = [device->device heapBufferSizeAndAlignWithLength:createInfo->size
+                                                                                  options:agfxHeapResourceOptions(createInfo->memoryType)];
+    info->size = sizeAndAlign.size;
+    info->alignment = sizeAndAlign.align;
 }
 
 // Texture view
@@ -2554,4 +2644,47 @@ void agfxComputePassExecuteIndirectBundle(agfxComputePass* computePass, agfxIndi
 
     [computePass->encoder executeCommandsInBuffer:bundle->icb
                                    indirectBuffer:bundle->execRanges.gpuAddress + (uint64_t)executeInfo->countIndex * sizeof(MTLIndirectCommandBufferExecutionRange)];
+}
+
+// Native interop
+//
+// Unwraps AGFX objects into the Metal objects they wrap, for third-party libraries that speak Metal
+// directly (MetalFX in particular). These are compiled unconditionally -- AGFX_EXPOSE_METAL gates
+// only whether a consumer's translation unit sees the declarations. See agfx_native.h for the
+// ownership and pass-scope rules that come with every one of these.
+
+AGFX_NATIVE_MTL(MTLDevice) agfxNativeGetMTLDevice(agfxDevice* device) {
+    return device->device;
+}
+
+AGFX_NATIVE_MTL(MTLResidencySet) agfxNativeGetMTLResidencySet(agfxDevice* device) {
+    return device->residencySet;
+}
+
+AGFX_NATIVE_MTL(MTL4CommandQueue) agfxNativeGetMTL4CommandQueue(agfxCommandQueue* queue) {
+    return queue->commandQueue;
+}
+
+AGFX_NATIVE_MTL(MTL4CommandBuffer) agfxNativeGetMTL4CommandBuffer(agfxCommandBuffer* commandBuffer) {
+    return commandBuffer->commandBuffer;
+}
+
+AGFX_NATIVE_MTL(MTLTexture) agfxNativeGetMTLTexture(agfxTexture* texture) {
+    return texture->texture;
+}
+
+AGFX_NATIVE_MTL(MTLBuffer) agfxNativeGetMTLBuffer(agfxBuffer* buffer) {
+    return buffer->buffer;
+}
+
+AGFX_NATIVE_MTL(MTLHeap) agfxNativeGetMTLHeap(agfxHeap* heap) {
+    return heap->heap;
+}
+
+AGFX_NATIVE_MTL(MTLSharedEvent) agfxNativeGetMTLSharedEvent(agfxFence* fence) {
+    return fence->fence;
+}
+
+AGFX_NATIVE_MTL_CLASS(CAMetalLayer) agfxNativeGetCAMetalLayer(agfxSwapChain* swapChain) {
+    return swapChain->metalLayer;
 }

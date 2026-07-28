@@ -2,7 +2,7 @@
 // @ Author: Amélie Heinrich @ Amélie Heinrich
 // @ Copyright: Copyright (c) 2026 Amélie Heinrich. All rights reserved.
 //
-// Test shader for resource aliasing (see notes/ALIASING.md and test_aliasing.cpp).
+// Test shader for resource aliasing (see test_aliasing.cpp).
 //
 // Every value produced here is an exact small integer stored through an RGBA32F texel: integers
 // under 2^24 round-trip exactly through fp32, which keeps the AliasHeapTransients golden bit-stable
