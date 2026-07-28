@@ -166,7 +166,7 @@ AGFX_TEST_TEXTURE(CopyBufferToTextureSlice, Cpp, kWidth, kHeight)
     agfx::Device device(DefaultDeviceCreateInfo());
     AGFX_EXPECT_NOT_NULL(device.Get());
 
-    agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+    agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
     agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
     agfx::Fence fence = device.CreateFence();
 
@@ -189,8 +189,8 @@ AGFX_TEST_TEXTURE(CopyBufferToTextureSlice, Cpp, kWidth, kHeight)
                     "failed to seed the source buffer");
 
     cmd.Begin();
-    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_SOURCE, false);
-    cmd.TextureBarrier(dest, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_DEST,
+    cmd.MemoryBarrier(agfx::ResourceState::Common, agfx::ResourceState::CopySource, false);
+    cmd.TextureBarrier(dest, agfx::ResourceState::Common, agfx::ResourceState::CopyDest,
                        AGFX_SUBRESOURCE_ALL_MIPS, kCopyLayer, false);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("copy buffer to texture slice");

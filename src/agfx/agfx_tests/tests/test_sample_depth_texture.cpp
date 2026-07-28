@@ -327,7 +327,7 @@ AGFX_TEST_TEXTURE(SampleDepthTexture, Cpp, kWidth, kHeight)
     agfx::Device device(DefaultDeviceCreateInfo());
     AGFX_EXPECT_NOT_NULL(device.Get());
 
-    agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+    agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
     agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
     agfx::Fence fence = device.CreateFence();
 
@@ -374,9 +374,9 @@ AGFX_TEST_TEXTURE(SampleDepthTexture, Cpp, kWidth, kHeight)
     sampleConstants.destination = (uint32_t)agfxTextureViewGetHandle(destUav);
 
     cmd.Begin();
-    cmd.TextureBarrier(depth, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_DEPTH_WRITE,
+    cmd.TextureBarrier(depth, agfx::ResourceState::Common, agfx::ResourceState::DepthWrite,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
-    cmd.TextureBarrier(dest, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+    cmd.TextureBarrier(dest, agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
     {
         agfx::RenderPass pass = cmd.BeginRenderPass(DepthPassInfo(depthTarget));
@@ -386,8 +386,8 @@ AGFX_TEST_TEXTURE(SampleDepthTexture, Cpp, kWidth, kHeight)
         pass.PushConstants(&drawConstants, sizeof(drawConstants));
         pass.Draw(3);
     }
-    cmd.TextureBarrier(depth, AGFX_RESOURCE_STATE_DEPTH_WRITE,
-                       AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+    cmd.TextureBarrier(depth, agfx::ResourceState::DepthWrite,
+                       agfx::ResourceState::NonPixelShaderResource,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("sample depth");

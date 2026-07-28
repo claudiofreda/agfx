@@ -228,7 +228,7 @@ namespace
             return false;
         }
 
-        agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+        agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
         agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
         agfx::Fence fence = device.CreateFence();
 
@@ -257,8 +257,8 @@ namespace
         constants.firstLaneIDBuffer = (uint32_t)agfxBufferViewGetHandle(firstLaneView);
 
         cmd.Begin();
-        cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
-        cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
+        cmd.MemoryBarrier(agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess, false);
+        cmd.MemoryBarrier(agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess, false);
         {
             agfx::ComputePass pass = cmd.BeginComputePass("compute wave ops");
             pass.SetPipeline(pipeline);

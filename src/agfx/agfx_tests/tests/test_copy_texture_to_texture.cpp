@@ -145,7 +145,7 @@ AGFX_TEST_TEXTURE(CopyTextureToTexture, Cpp, kWidth, kHeight)
     agfx::Device device(DefaultDeviceCreateInfo());
     AGFX_EXPECT_NOT_NULL(device.Get());
 
-    agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+    agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
     agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
     agfx::Fence fence = device.CreateFence();
 
@@ -166,9 +166,9 @@ AGFX_TEST_TEXTURE(CopyTextureToTexture, Cpp, kWidth, kHeight)
                     "failed to seed the destination texture");
 
     cmd.Begin();
-    cmd.TextureBarrier(source, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_SOURCE,
+    cmd.TextureBarrier(source, agfx::ResourceState::Common, agfx::ResourceState::CopySource,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, false);
-    cmd.TextureBarrier(dest, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_DEST,
+    cmd.TextureBarrier(dest, agfx::ResourceState::Common, agfx::ResourceState::CopyDest,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, false);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("copy texture to texture");

@@ -479,7 +479,7 @@ namespace agfxtest
                 return IndirectResult::Failed;
             }
 
-            agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+            agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
             agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
             agfx::Fence fence = device.CreateFence();
 
@@ -609,20 +609,20 @@ namespace agfxtest
             device.MakeResourcesResident();
 
             cmd.Begin();
-            cmd.TextureBarrier(target, AGFX_RESOURCE_STATE_COMMON,
-                               IsDrawKind(state.kind) ? AGFX_RESOURCE_STATE_RENDER_TARGET
-                                                      : AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+            cmd.TextureBarrier(target, agfx::ResourceState::Common,
+                               IsDrawKind(state.kind) ? agfx::ResourceState::RenderTarget
+                                                      : agfx::ResourceState::UnorderedAccess,
                                AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
             if (state.kind == IndirectKind::DrawIndexed) {
-                cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON,
-                                  AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, true);
-                cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON,
-                                  AGFX_RESOURCE_STATE_INDEX_BUFFER, true);
+                cmd.MemoryBarrier(agfx::ResourceState::Common,
+                                  agfx::ResourceState::NonPixelShaderResource, true);
+                cmd.MemoryBarrier(agfx::ResourceState::Common,
+                                  agfx::ResourceState::IndexBuffer, true);
             }
-            cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON,
-                              AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
-            cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON,
-                              AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
+            cmd.MemoryBarrier(agfx::ResourceState::Common,
+                              agfx::ResourceState::UnorderedAccess, true);
+            cmd.MemoryBarrier(agfx::ResourceState::Common,
+                              agfx::ResourceState::UnorderedAccess, true);
             {
                 agfx::ComputePass pass = cmd.BeginComputePass("test indirect produce");
                 pass.SetPipeline(producerPipeline);
@@ -632,10 +632,10 @@ namespace agfxtest
                 pass.BufferUAVBarrier(countBuffer);
                 pass.PrepareIndirectBundle(bundle, executeInfo);
             }
-            cmd.MemoryBarrier(AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
-                              AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
-            cmd.MemoryBarrier(AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
-                              AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
+            cmd.MemoryBarrier(agfx::ResourceState::UnorderedAccess,
+                              agfx::ResourceState::IndirectArgument, true);
+            cmd.MemoryBarrier(agfx::ResourceState::UnorderedAccess,
+                              agfx::ResourceState::IndirectArgument, true);
             if (IsDrawKind(state.kind)) {
                 agfx::RenderPass pass = cmd.BeginRenderPass(PassInfo(renderTarget));
                 pass.SetViewport(0.0f, 0.0f, (float)kIndirectWidth, (float)kIndirectHeight);

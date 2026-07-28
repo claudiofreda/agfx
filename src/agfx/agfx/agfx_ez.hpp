@@ -475,12 +475,12 @@ namespace agfx::ez
                 // Unlike the post-copy barrier this class deliberately skips (see the class comment),
                 // this one isn't optional: CopyBufferToTexture requires the destination to actually be
                 // in COPY_DEST, so it's transitioned in and back out explicitly around the copy.
-                mCommandBuffer.TextureBarrier(dst, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_DEST,
+                mCommandBuffer.TextureBarrier(dst, agfx::ResourceState::Common, agfx::ResourceState::CopyDest,
                                               mipLevel, layer, false);
                 EnsurePass();
                 mComputePass->CopyBufferToTexture(staging, dst, region, mipLevel, layer, bytesPerRow, bytesPerImage);
                 mComputePass.reset();
-                mCommandBuffer.TextureBarrier(dst, AGFX_RESOURCE_STATE_COPY_DEST, AGFX_RESOURCE_STATE_COMMON,
+                mCommandBuffer.TextureBarrier(dst, agfx::ResourceState::CopyDest, agfx::ResourceState::Common,
                                               mipLevel, layer, false);
                 mStagingBuffers.push_back(std::move(staging));
             }
@@ -913,7 +913,7 @@ namespace agfx::ez
                 mOwnsDevice = true;
             }
 
-            mQueue = mDevice->CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+            mQueue = mDevice->CreateCommandQueue(agfx::CommandQueueType::Graphics);
             mWindowHandle = info.windowHandle;
 
             mHeadless = (info.windowHandle == nullptr);
@@ -1114,7 +1114,7 @@ namespace agfx::ez
             info.name = "ez back buffer pass";
 
             mBoundColorCount = 1;
-            mBoundColorFormats[0] = mSwapChain.GetFormat();
+            mBoundColorFormats[0] = static_cast<agfxTextureFormat>(mSwapChain.GetFormat());
             mHasDepth = false;
 
             mActiveRenderPass.emplace(mCommandBuffers[mFrameSlot].BeginRenderPass(info));
@@ -1460,8 +1460,8 @@ namespace agfx::ez
                 if (tracker.Current() == newState) {
                     return;
                 }
-                cmd.TextureBarrier(tex.Raw(), tracker.Current(), newState, AGFX_SUBRESOURCE_ALL_MIPS,
-                                   AGFX_SUBRESOURCE_ALL_LAYERS, true);
+                cmd.TextureBarrier(tex.Raw(), static_cast<agfx::ResourceState>(tracker.Current()), static_cast<agfx::ResourceState>(newState),
+                                   AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
                 tracker.Set(newState);
                 return;
             }
@@ -1475,7 +1475,7 @@ namespace agfx::ez
             if (buf.State() == newState) {
                 return;
             }
-            mCommandBuffers[mFrameSlot].MemoryBarrier(buf.State(), newState, true);
+            mCommandBuffers[mFrameSlot].MemoryBarrier(static_cast<agfx::ResourceState>(buf.State()), static_cast<agfx::ResourceState>(newState), true);
             buf.SetState(newState);
         }
 
@@ -1499,7 +1499,7 @@ namespace agfx::ez
         agfxTextureFormat GetSwapChainFormat() const
         {
             assert(!mHeadless && "Context::GetSwapChainFormat() requires a swap chain (non-headless Context)");
-            return mSwapChain.GetFormat();
+            return static_cast<agfxTextureFormat>(mSwapChain.GetFormat());
         }
 
         /// @brief True when the Context was created without a windowHandle: no swap chain exists, and
@@ -1559,7 +1559,7 @@ namespace agfx::ez
                     if (oldState == newState) {
                         continue;
                     }
-                    cmd.TextureBarrier(tex.Raw(), oldState, newState, mip, layer, true);
+                    cmd.TextureBarrier(tex.Raw(), static_cast<agfx::ResourceState>(oldState), static_cast<agfx::ResourceState>(newState), mip, layer, true);
                     tracker.SetAt(mip, layer, newState);
                 }
             }
@@ -1640,8 +1640,8 @@ namespace agfx::ez
             }
             // AS->AS barrier: producer/consumer both MTLStageAccelerationStructure, so consumers of this
             // structure (further builds, or the trace) see a completed build. A COMMON source is dropped.
-            cmd.MemoryBarrier(AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
-                               AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, true);
+            cmd.MemoryBarrier(agfx::ResourceState::RaytracingAccelerationStructure,
+                               agfx::ResourceState::RaytracingAccelerationStructure, true);
             cmd.End();
 
             mQueue.Submit(cmd);

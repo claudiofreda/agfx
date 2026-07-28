@@ -396,8 +396,8 @@ namespace agfxtest
                 return false;
             }
 
-            agfx::CommandQueue graphicsQueue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
-            agfx::CommandQueue producerQueue = device.CreateCommandQueue(ProducerQueueType(producer));
+            agfx::CommandQueue graphicsQueue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
+            agfx::CommandQueue producerQueue = device.CreateCommandQueue(static_cast<agfx::CommandQueueType>(ProducerQueueType(producer)));
             if (!graphicsQueue.Get() || !producerQueue.Get()) {
                 return false;
             }
@@ -467,7 +467,7 @@ namespace agfxtest
             //    "assumed at first use" state instead.
             preCmd.Begin();
             if (!isCopy) {
-                preCmd.TextureBarrier(shared, AGFX_RESOURCE_STATE_COMMON, ProducerState(producer),
+                preCmd.TextureBarrier(shared, agfx::ResourceState::Common, static_cast<agfx::ResourceState>(ProducerState(producer)),
                                       AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, false);
             }
             preCmd.End();
@@ -499,10 +499,10 @@ namespace agfxtest
             // 3. Graphics queue: waits for the producer, then samples its result.
             graphicsQueue.Wait(fence, 2);
             drawCmd.Begin();
-            drawCmd.TextureBarrier(shared, isCopy ? AGFX_RESOURCE_STATE_COMMON : ProducerState(producer),
-                                   AGFX_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            drawCmd.TextureBarrier(shared, isCopy ? agfx::ResourceState::Common : static_cast<agfx::ResourceState>(ProducerState(producer)),
+                                   agfx::ResourceState::PixelShaderResource,
                                    AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, false);
-            drawCmd.TextureBarrier(target, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_RENDER_TARGET,
+            drawCmd.TextureBarrier(target, agfx::ResourceState::Common, agfx::ResourceState::RenderTarget,
                                    AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, false);
             {
                 agfx::RenderPass pass = drawCmd.BeginRenderPass(PassInfo(renderTarget));

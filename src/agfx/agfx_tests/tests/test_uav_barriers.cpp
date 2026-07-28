@@ -220,7 +220,7 @@ namespace
             return false;
         }
 
-        agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+        agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
         agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
         agfx::Fence fence = device.CreateFence();
 
@@ -261,8 +261,8 @@ namespace
         constants.rwTexture = (uint32_t)agfxTextureViewGetHandle(textureView);
 
         cmd.Begin();
-        cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
-        cmd.TextureBarrier(texture, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+        cmd.MemoryBarrier(agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess, true);
+        cmd.TextureBarrier(texture, agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess,
                            AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
         {
             agfx::ComputePass pass = cmd.BeginComputePass("uav barrier chain");

@@ -193,7 +193,7 @@ AGFX_TEST_TEXTURE(PipelineCacheMeshOnly, Cpp, kPipelineCacheWidth, kPipelineCach
     agfx::Device device(DefaultDeviceCreateInfo());
     AGFX_EXPECT_NOT_NULL(device.Get());
 
-    agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+    agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
     agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
     agfx::Fence fence = device.CreateFence();
 
@@ -222,7 +222,7 @@ AGFX_TEST_TEXTURE(PipelineCacheMeshOnly, Cpp, kPipelineCacheWidth, kPipelineCach
 
     const PipelineCacheConstants constantsA = ConstantsFor(kDepthValueA, 0);
     cmd.Begin();
-    cmd.TextureBarrier(depth, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_DEPTH_WRITE,
+    cmd.TextureBarrier(depth, agfx::ResourceState::Common, agfx::ResourceState::DepthWrite,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
     {
         agfx::RenderPass pass = cmd.BeginRenderPass(PassInfo(depthTarget, AGFX_LOAD_OPERATION_CLEAR));

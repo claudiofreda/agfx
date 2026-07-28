@@ -195,7 +195,7 @@ AGFX_TEST_TEXTURE(ComputeTextureLoad3D, Cpp, kWidth, kHeight* kDepth)
     agfx::Device device(DefaultDeviceCreateInfo());
     AGFX_EXPECT_NOT_NULL(device.Get());
 
-    agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+    agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
     agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
     agfx::Fence fence = device.CreateFence();
 
@@ -247,9 +247,9 @@ AGFX_TEST_TEXTURE(ComputeTextureLoad3D, Cpp, kWidth, kHeight* kDepth)
     device.MakeResourcesResident();
 
     cmd.Begin();
-    cmd.TextureBarrier(source, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+    cmd.TextureBarrier(source, agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
-    cmd.TextureBarrier(target, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+    cmd.TextureBarrier(target, agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("compute texture load 3d");
@@ -257,8 +257,8 @@ AGFX_TEST_TEXTURE(ComputeTextureLoad3D, Cpp, kWidth, kHeight* kDepth)
         pass.PushConstants(seedConstants);
         pass.Dispatch(kGroupsX, kGroupsY, kGroupsZ);
     }
-    cmd.TextureBarrier(source, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
-                       AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+    cmd.TextureBarrier(source, agfx::ResourceState::UnorderedAccess,
+                       agfx::ResourceState::NonPixelShaderResource,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("compute texture load 3d");

@@ -264,7 +264,7 @@ AGFX_TEST_TEXTURE(Sample2DArray, Cpp, kWidth, kHeight* kLayers)
     agfx::Device device(DefaultDeviceCreateInfo());
     AGFX_EXPECT_NOT_NULL(device.Get());
 
-    agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+    agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
     agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
     agfx::Fence fence = device.CreateFence();
 
@@ -319,9 +319,9 @@ AGFX_TEST_TEXTURE(Sample2DArray, Cpp, kWidth, kHeight* kLayers)
     cmd.Begin();
     // agglomerate must be true: a barrier recorded with false is a no-op on the Metal backend, which
     // left the seed and sample dispatches unsynchronized and made this test intermittently fail.
-    cmd.TextureBarrier(source, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+    cmd.TextureBarrier(source, agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
-    cmd.TextureBarrier(dest, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+    cmd.TextureBarrier(dest, agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess,
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("array seed");
@@ -329,8 +329,8 @@ AGFX_TEST_TEXTURE(Sample2DArray, Cpp, kWidth, kHeight* kLayers)
         pass.PushConstants(seedConstants);
         pass.Dispatch(kGroupsX, kGroupsY, kGroupsZ);
     }
-    cmd.TextureBarrier(source, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
-                       AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, AGFX_SUBRESOURCE_ALL_MIPS,
+    cmd.TextureBarrier(source, agfx::ResourceState::UnorderedAccess,
+                       agfx::ResourceState::NonPixelShaderResource, AGFX_SUBRESOURCE_ALL_MIPS,
                        AGFX_SUBRESOURCE_ALL_LAYERS, true);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("array sample");

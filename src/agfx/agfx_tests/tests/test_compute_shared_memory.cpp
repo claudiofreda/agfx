@@ -162,7 +162,7 @@ AGFX_TEST_BUFFER(ComputeSharedMemory, Cpp)
     agfx::Device device(DefaultDeviceCreateInfo());
     AGFX_EXPECT_NOT_NULL(device.Get());
 
-    agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+    agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
     agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
     agfx::Fence fence = device.CreateFence();
 
@@ -211,8 +211,8 @@ AGFX_TEST_BUFFER(ComputeSharedMemory, Cpp)
     constants.elementCount = kElementCount;
 
     cmd.Begin();
-    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, false);
-    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, false);
+    cmd.MemoryBarrier(agfx::ResourceState::Common, agfx::ResourceState::NonPixelShaderResource, false);
+    cmd.MemoryBarrier(agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess, false);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("compute shared memory");
         pass.SetPipeline(pipeline);

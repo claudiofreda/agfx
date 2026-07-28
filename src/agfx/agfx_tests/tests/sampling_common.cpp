@@ -204,7 +204,7 @@ namespace agfxtest
                 return false;
             }
 
-            agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+            agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
             agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
             agfx::Fence fence = device.CreateFence();
 
@@ -246,9 +246,9 @@ namespace agfxtest
             sampleConstants.destination = (uint32_t)destUav.GetHandle();
 
             cmd.Begin();
-            cmd.TextureBarrier(source, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+            cmd.TextureBarrier(source, agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess,
                                AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
-            cmd.TextureBarrier(dest, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+            cmd.TextureBarrier(dest, agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess,
                                AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, true);
             {
                 agfx::ComputePass pass = cmd.BeginComputePass("sampler seed");
@@ -256,8 +256,8 @@ namespace agfxtest
                 pass.PushConstants(seedConstants);
                 pass.Dispatch(kGroupsX, kGroupsY, 1);
             }
-            cmd.TextureBarrier(source, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
-                               AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, AGFX_SUBRESOURCE_ALL_MIPS,
+            cmd.TextureBarrier(source, agfx::ResourceState::UnorderedAccess,
+                               agfx::ResourceState::NonPixelShaderResource, AGFX_SUBRESOURCE_ALL_MIPS,
                                AGFX_SUBRESOURCE_ALL_LAYERS, true);
             {
                 agfx::ComputePass pass = cmd.BeginComputePass("sampler sample");

@@ -448,9 +448,9 @@ namespace
             return false;
         }
 
-        agfx::CommandQueue graphicsQueue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
-        agfx::CommandQueue transferQueue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_TRANSFER);
-        agfx::CommandQueue computeQueue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_COMPUTE);
+        agfx::CommandQueue graphicsQueue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
+        agfx::CommandQueue transferQueue = device.CreateCommandQueue(agfx::CommandQueueType::Transfer);
+        agfx::CommandQueue computeQueue = device.CreateCommandQueue(agfx::CommandQueueType::Compute);
         if (!graphicsQueue.Get() || !transferQueue.Get() || !computeQueue.Get()) {
             outError = "queue creation failed";
             return false;
@@ -545,10 +545,10 @@ namespace
         midCmd.Begin();
         // The transfer queue's COPY_DEST usage decays back to COMMON crossing back to the graphics
         // queue, so that's the "before" state here, not COPY_DEST.
-        midCmd.TextureBarrier(intermediate, AGFX_RESOURCE_STATE_COMMON,
-                              AGFX_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+        midCmd.TextureBarrier(intermediate, agfx::ResourceState::Common,
+                              agfx::ResourceState::NonPixelShaderResource,
                               AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, false);
-        midCmd.TextureBarrier(final_, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
+        midCmd.TextureBarrier(final_, agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess,
                               AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, false);
         midCmd.End();
         graphicsQueue.Submit(midCmd);
@@ -570,10 +570,10 @@ namespace
         // 5. Graphics queue: waits for the compute dispatch, samples final into target.
         graphicsQueue.Wait(fence, 4);
         drawCmd.Begin();
-        drawCmd.TextureBarrier(final_, AGFX_RESOURCE_STATE_UNORDERED_ACCESS,
-                               AGFX_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        drawCmd.TextureBarrier(final_, agfx::ResourceState::UnorderedAccess,
+                               agfx::ResourceState::PixelShaderResource,
                                AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, false);
-        drawCmd.TextureBarrier(target, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_RENDER_TARGET,
+        drawCmd.TextureBarrier(target, agfx::ResourceState::Common, agfx::ResourceState::RenderTarget,
                                AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, false);
         {
             agfx::RenderPass pass = drawCmd.BeginRenderPass(PassInfo(renderTarget));

@@ -313,7 +313,7 @@ AGFX_TEST_BUFFER(AliasHeapTransients, Cpp)
     agfx::Device device(DefaultDeviceCreateInfo());
     AGFX_EXPECT_NOT_NULL(device.Get());
 
-    agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+    agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
     agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
     agfx::Fence fence = device.CreateFence();
 
@@ -377,10 +377,10 @@ AGFX_TEST_BUFFER(AliasHeapTransients, Cpp)
     constants.rwBuffer = (uint32_t)accView.GetHandle();
 
     cmd.Begin();
-    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
+    cmd.MemoryBarrier(agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess, true);
     for (uint32_t phase = 0; phase < 3; ++phase) {
-        const agfxResourceState outgoing = (phase == 0) ? AGFX_RESOURCE_STATE_COMMON : AGFX_RESOURCE_STATE_UNORDERED_ACCESS;
-        cmd.AliasingBarrier(*textures[phase], outgoing, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
+        const agfx::ResourceState outgoing = (phase == 0) ? agfx::ResourceState::Common : agfx::ResourceState::UnorderedAccess;
+        cmd.AliasingBarrier(*textures[phase], outgoing, agfx::ResourceState::UnorderedAccess, true);
 
         constants.rwTexture = (uint32_t)views[phase]->GetHandle();
         constants.patternIndex = phase;
@@ -478,11 +478,11 @@ AGFX_TEST_BUFFER(AliasHeapTransients, Ez)
         context.TransitionBuffer(accumulator, AGFX_RESOURCE_STATE_UNORDERED_ACCESS);
 
         for (uint32_t phase = 0; phase < 3; ++phase) {
-            const agfxResourceState outgoing = (phase == 0) ? AGFX_RESOURCE_STATE_COMMON : AGFX_RESOURCE_STATE_UNORDERED_ACCESS;
+            const agfx::ResourceState outgoing = (phase == 0) ? agfx::ResourceState::Common : agfx::ResourceState::UnorderedAccess;
             // ez deliberately has no aliasing-barrier sugar; drop to the frame's raw command
             // buffer, the same precedented pattern the compute-pass-less tests already use, and
             // update the tracker by hand since TransitionTexture was bypassed.
-            context.GetCurrentCommandBuffer().AliasingBarrier(textures[phase]->Raw(), outgoing, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
+            context.GetCurrentCommandBuffer().AliasingBarrier(textures[phase]->Raw(), outgoing, agfx::ResourceState::UnorderedAccess, true);
             textures[phase]->SetState(AGFX_RESOURCE_STATE_UNORDERED_ACCESS);
 
             constants.rwTexture = (uint32_t)textures[phase]->UAV().GetHandle();
@@ -600,7 +600,7 @@ AGFX_TEST_VALIDATION(AliasBufferOverlap, Cpp)
     agfx::Device device(DefaultDeviceCreateInfo());
     AGFX_EXPECT_NOT_NULL(device.Get());
 
-    agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+    agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
     agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
     agfx::Fence fence = device.CreateFence();
 
@@ -644,12 +644,12 @@ AGFX_TEST_VALIDATION(AliasBufferOverlap, Cpp)
     }
 
     cmd.Begin();
-    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_DEST, false);
+    cmd.MemoryBarrier(agfx::ResourceState::Common, agfx::ResourceState::CopyDest, false);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("alias buffer overlap: write A");
         pass.CopyBufferToBuffer(source, bufferA, 0, 0, kOverlapSize);
     }
-    cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COPY_DEST, AGFX_RESOURCE_STATE_COPY_SOURCE, false);
+    cmd.MemoryBarrier(agfx::ResourceState::CopyDest, agfx::ResourceState::CopySource, false);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("alias buffer overlap: read B");
         pass.CopyBufferToBuffer(bufferB, readback, 0, 0, kOverlapSize);
@@ -727,12 +727,12 @@ AGFX_TEST_VALIDATION(AliasBufferOverlap, Ez)
         // ez has no copy sugar and no tracking for these raw, off-device buffers; drop to the
         // frame's raw command buffer for both the barriers and the copies.
         agfx::CommandBuffer& cmd = context.GetCurrentCommandBuffer();
-        cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_DEST, true);
+        cmd.MemoryBarrier(agfx::ResourceState::Common, agfx::ResourceState::CopyDest, true);
         {
             agfx::ComputePass pass = cmd.BeginComputePass("alias buffer overlap: write A");
             pass.CopyBufferToBuffer(source, bufferA, 0, 0, kOverlapSize);
         }
-        cmd.MemoryBarrier(AGFX_RESOURCE_STATE_COPY_DEST, AGFX_RESOURCE_STATE_COPY_SOURCE, true);
+        cmd.MemoryBarrier(agfx::ResourceState::CopyDest, agfx::ResourceState::CopySource, true);
         {
             agfx::ComputePass pass = cmd.BeginComputePass("alias buffer overlap: read B");
             pass.CopyBufferToBuffer(bufferB, readback, 0, 0, kOverlapSize);
@@ -873,7 +873,7 @@ AGFX_TEST_VALIDATION(AliasHazardOrdering, Cpp)
     agfx::Device device(DefaultDeviceCreateInfo());
     AGFX_EXPECT_NOT_NULL(device.Get());
 
-    agfx::CommandQueue queue = device.CreateCommandQueue(AGFX_COMMAND_QUEUE_TYPE_GRAPHICS);
+    agfx::CommandQueue queue = device.CreateCommandQueue(agfx::CommandQueueType::Graphics);
     agfx::CommandBuffer cmd = device.CreateCommandBuffer(queue);
     agfx::Fence fence = device.CreateFence();
 
@@ -930,7 +930,7 @@ AGFX_TEST_VALIDATION(AliasHazardOrdering, Cpp)
     constants.height = kHazardSize;
 
     cmd.Begin();
-    cmd.AliasingBarrier(textureA, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
+    cmd.AliasingBarrier(textureA, agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess, true);
     {
         constants.rwTexture = (uint32_t)viewA.GetHandle();
         constants.iterationCount = kHazardIterations;
@@ -939,7 +939,7 @@ AGFX_TEST_VALIDATION(AliasHazardOrdering, Cpp)
         pass.PushConstants(constants);
         pass.Dispatch(kHazardGroupCount, kHazardGroupCount, 1);
     }
-    cmd.AliasingBarrier(textureB, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
+    cmd.AliasingBarrier(textureB, agfx::ResourceState::UnorderedAccess, agfx::ResourceState::UnorderedAccess, true);
     {
         constants.rwTexture = (uint32_t)viewB.GetHandle();
         constants.patternIndex = 3;
@@ -1028,7 +1028,7 @@ AGFX_TEST_VALIDATION(AliasHazardOrdering, Ez)
 
         // ez deliberately has no aliasing-barrier sugar; drop to the raw command buffer and update
         // each tracker by hand since TransitionTexture was bypassed.
-        cmd.AliasingBarrier(textureA.Raw(), AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
+        cmd.AliasingBarrier(textureA.Raw(), agfx::ResourceState::Common, agfx::ResourceState::UnorderedAccess, true);
         textureA.SetState(AGFX_RESOURCE_STATE_UNORDERED_ACCESS);
         {
             constants.rwTexture = (uint32_t)textureA.UAV().GetHandle();
@@ -1039,7 +1039,7 @@ AGFX_TEST_VALIDATION(AliasHazardOrdering, Ez)
             pass.Dispatch(kHazardGroupCount, kHazardGroupCount, 1);
         }
 
-        cmd.AliasingBarrier(textureB.Raw(), AGFX_RESOURCE_STATE_UNORDERED_ACCESS, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
+        cmd.AliasingBarrier(textureB.Raw(), agfx::ResourceState::UnorderedAccess, agfx::ResourceState::UnorderedAccess, true);
         textureB.SetState(AGFX_RESOURCE_STATE_UNORDERED_ACCESS);
         {
             constants.rwTexture = (uint32_t)textureB.UAV().GetHandle();
