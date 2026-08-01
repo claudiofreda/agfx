@@ -19,6 +19,7 @@ struct CullingPushConstants {
     uint32_t gpuScene;
     uint32_t primitiveCount;
     uint64_t bundleHandle;
+    uint32_t drawIndirection;
 };
 
 } // namespace
@@ -62,7 +63,7 @@ AgfxCulling::~AgfxCulling()
 }
 
 void AgfxCulling::Cull(agfxComputePass* pass, agfxBufferView* gpuSceneView, uint32_t primitiveCount,
-                        const glm::vec4 frustumPlanes[6], uint64_t bundleHandle)
+                        const glm::vec4 frustumPlanes[6], uint64_t bundleHandle, uint32_t drawIndirectionHandle)
 {
     agfxComputePassSetPipeline(pass, pipeline);
 
@@ -71,6 +72,7 @@ void AgfxCulling::Cull(agfxComputePass* pass, agfxBufferView* gpuSceneView, uint
     pc.gpuScene = (uint32_t)agfxBufferViewGetHandle(gpuSceneView);
     pc.primitiveCount = primitiveCount;
     pc.bundleHandle = bundleHandle;
+    pc.drawIndirection = drawIndirectionHandle;
     agfxComputePassPushConstants(pass, &pc, sizeof(pc));
 
     agfxComputePassDispatch(pass, (primitiveCount + 63) / 64, 1, 1);

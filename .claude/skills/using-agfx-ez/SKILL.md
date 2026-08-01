@@ -46,7 +46,9 @@ Tracking *is* subresource-granular: `ResourceStateTracker` stores one state whil
 ```cpp
 agfx::ez::ContextCreateInfo info{};
 info.deviceInfo.enableValidation = true; // or leave device fields default and set existingDevice instead
-info.windowHandle = metalLayerOrHwnd;    // CAMetalLayer* on macOS, HWND on Windows
+info.windowHandle = nativeHandle;        // CAMetalLayer* on macOS, HWND on Windows, agfxLinuxWindowHandle*
+                                         // on Linux (the struct must outlive the Context -- it is re-read
+                                         // when SetHDR recreates the swap chain)
 info.width = width;
 info.height = height;
 info.vsync = true;
@@ -118,7 +120,7 @@ These upload synchronously (map a staging buffer, copy, submit, wait) and call `
 
 `CreateTexture2D`'s `pixels` only seeds mip 0 of layer 0. `UploadTexture(dst, region, mipLevel, layer, data, dataSize, bytesPerRow, bytesPerImage)` is the general form — use it to seed lower mips, array layers, cube faces, and 3D slices (3D slices via `region.z`/`region.depth`, since a 3D texture has no layers). It blocks and establishes residency, same as creation.
 
-Uploaded resources are deliberately left in `AGFX_RESOURCE_STATE_COMMON`, and the tracker agrees. Don't "fix" this with a post-upload barrier: COMMON's producer stages are 0 like every read state's, so it changes nothing on D3D12, and on Metal4 a 0-producer/non-zero-consumer pair yields `barrierAfterQueueStages:0`, which Metal's validation layer rejects.
+Uploaded resources are deliberately left in `AGFX_RESOURCE_STATE_COMMON`, and the tracker agrees. Don't "fix" this with a post-upload barrier: COMMON's producer stages are 0 like every read state's, so it changes nothing on D3D12 or Vulkan, and on Metal4 a 0-producer/non-zero-consumer pair yields `barrierAfterQueueStages:0`, which Metal's validation layer rejects.
 
 ### Copies (inside the frame loop)
 
@@ -206,7 +208,7 @@ ctx.ExecuteIndirectBundle(bundle, executeInfo);
 
 `TransitionIndirectBundle` moves the commands and count buffers together — they always transition in lockstep, so the bundle carries a single shared state tracker — and no-ops when already in the target state. `Context::ExecuteIndirectBundle` asserts an active render pass and handles DRAW/DRAW_INDEXED/DRAW_MESH bundles; **DISPATCH bundles have no ez wrapper** and go through `agfx::ComputePass::ExecuteIndirectBundle` on a raw compute pass, same as prepare.
 
-Two requirements ez cannot check for you, both silent-on-D3D12 / fatal-on-Metal: the pipeline needs `supportsIndirect`, and `pushConstants` must be filled on the *prepare* info as well as the execute info. See **agfx-mdi** for both, and for the bundle layout and ordering rules this sugar sits on top of.
+Two requirements ez cannot check for you, both silent-on-D3D12/Vulkan / fatal-on-Metal: the pipeline needs `supportsIndirect`, and `pushConstants` must be filled on the *prepare* info as well as the execute info. A third is Vulkan-specific: `AGFX_DRAW_ID()` there is the linear DrawIndex, not the drawId your culling shader wrote — see **agfx-mdi** gotcha 6 for the indirection-buffer pattern, and for the bundle layout and ordering rules this sugar sits on top of.
 
 ### Explicit transitions (the escape hatch)
 

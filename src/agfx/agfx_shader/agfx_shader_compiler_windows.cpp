@@ -90,7 +90,6 @@ void agfxCompileShader(agfxShaderCompilerOptions* options, agfxShaderCompilerRes
         compileArgs.push_back(L"-Qembed_debug");
         compileArgs.push_back(L"-Zi");
     }
-    compileArgs.push_back(L"-DAGFX_METAL");
     for (int i = 0; i < options->definesCount; i++) {
         wideDefines.push_back(L"-D" + std::wstring(options->defines[i], options->defines[i] + strlen(options->defines[i])));
         compileArgs.push_back(wideDefines.back().c_str());

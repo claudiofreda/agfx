@@ -13,6 +13,10 @@ target("agfx_shader")
     elseif is_plat("windows") then
         add_files("agfx_shader/agfx_shader_compiler_windows.cpp")
         add_syslinks("dxcompiler", { public = true })
+    elseif is_plat("linux") then
+        add_files("agfx_shader/agfx_shader_compiler_linux.cpp")
+        add_files("agfx_shader/spirv_reflect/spirv_reflect.c")
+        add_syslinks("dl", { public = true })
     end
 
 target("agfx_shader_cli")
@@ -31,6 +35,9 @@ target("agfx")
     elseif is_plat("windows") then
         add_files("agfx/agfx_d3d12.cpp")
         add_syslinks("d3d12", "dxgi", "dxguid", "WinPixEventRuntime", { public = true })
+    elseif is_plat("linux") then
+        add_files("agfx/agfx_vulkan.cpp")
+        add_includedirs("agfx/vk")
     end
 
 target("agfx_imgui")

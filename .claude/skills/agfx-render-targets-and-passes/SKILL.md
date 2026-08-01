@@ -7,7 +7,7 @@ description: ALWAYS use when creating agfxRenderTarget or agfxRenderPass objects
 
 ## Overview
 
-AGFX render targets and render passes mirror the way Metal 4 and D3D12 both express "attachment then pass" but AGFX flattens both backends behind one API. An `agfxRenderTarget` is a thin, cheap-to-create wrapper around a texture (or texture subresource) that tells the backend how to attach it — as a color or depth-stencil target, at a given mip/layer. An `agfxRenderPass` is the actual encoding scope: it groups up to 8 color attachments and one optional depth attachment, and every draw call in AGFX must happen inside one.
+AGFX render targets and render passes mirror the way Metal 4, D3D12, and Vulkan dynamic rendering all express "attachment then pass", flattened behind one API. An `agfxRenderTarget` is a thin, cheap-to-create wrapper around a texture (or texture subresource) that tells the backend how to attach it — as a color or depth-stencil target, at a given mip/layer. An `agfxRenderPass` is the actual encoding scope: it groups up to 8 color attachments and one optional depth attachment, and every draw call in AGFX must happen inside one.
 
 Render targets are intentionally lightweight: create one right before `agfxRenderPassBegin` and destroy it right after `agfxRenderPassEnd`. Don't cache them across frames — cache the underlying `agfxTexture` instead and re-wrap it each pass (see `deferred_renderer.cpp` for the GBuffer/HDR/depth targets recreated only on resize, but their `agfxRenderTarget` wrappers created per-pass).
 
@@ -62,7 +62,7 @@ Every color attachment's underlying texture must already be in `AGFX_RESOURCE_ST
 agfxCommandBufferTextureBarrier(cmd, colorTexture, AGFX_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, AGFX_RESOURCE_STATE_RENDER_TARGET, 0, 0, /*agglomerate=*/true);
 ```
 
-See `agfx-synchronization` for the `agglomerate` flag's Metal-vs-D3D12 semantics — get this wrong and you'll get correct D3D12 output with garbage or validation errors on Metal.
+See `agfx-synchronization` for the `agglomerate` flag's semantics (ignored on D3D12/Vulkan, load-bearing on Metal) — get this wrong and you'll get correct D3D12/Vulkan output with garbage or validation errors on Metal.
 
 ### Beginning a render pass with multiple attachments
 

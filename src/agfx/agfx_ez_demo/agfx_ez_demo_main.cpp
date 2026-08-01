@@ -143,6 +143,19 @@ int main()
     contextInfo.framesInFlight = kFramesInFlight;
 #if GAME_MAC
     contextInfo.windowHandle = metalLayer;
+#elif GAME_LINUX
+    // Must outlive the Context: the swap chain (and any HDR-toggle recreation) reads through it.
+    agfxLinuxWindowHandle linuxWindowHandle = {};
+    const bool isWayland = SDL_strcmp(SDL_GetCurrentVideoDriver(), "wayland") == 0;
+    contextInfo.deviceInfo.displayServerProtocol = isWayland ? AGFX_DISPLAY_SERVER_PROTOCOL_WAYLAND : AGFX_DISPLAY_SERVER_PROTOCOL_X11;
+    if (isWayland) {
+        linuxWindowHandle.display = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, NULL);
+        linuxWindowHandle.window = (uint64_t)(uintptr_t)SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, NULL);
+    } else {
+        linuxWindowHandle.display = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_X11_DISPLAY_POINTER, NULL);
+        linuxWindowHandle.window = (uint64_t)SDL_GetNumberProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
+    }
+    contextInfo.windowHandle = &linuxWindowHandle;
 #else
     contextInfo.windowHandle = (void*)SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
 #endif

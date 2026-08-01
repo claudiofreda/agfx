@@ -146,6 +146,10 @@ public:
     agfxRenderPipeline* gbufferIndirectPipeline = nullptr;
     agfxIndirectBundle* gbufferIndirectBundle = nullptr;
     agfxBuffer* indirectCountResetBuffer = nullptr;
+    // slot -> GPU-scene index, written by culling.hlsl and read by gbuffer_indirect.hlsl's vertex
+    // shader on Vulkan, where DrawIndex is linear rather than the culling shader's drawId.
+    agfxBuffer* drawIndirectionBuffer = nullptr;
+    agfxBufferView* drawIndirectionView = nullptr;
     uint32_t indirectPrimitiveCount = 0;
     glm::mat4 frozenViewProj = glm::mat4(1.0f);
     bool hasFrozenViewProj = false;

@@ -11,6 +11,8 @@ Vulkan is, of all the source APIs, structurally the closest to AGFX: both use ex
 
 If the source engine still uses classic per-material `VkDescriptorSet`s (not already bindless/descriptor-indexed), expect the binding-model rewrite to be the most invasive part of the port — same shape of work as a D3D12-root-signature port, just starting from descriptor sets instead of root signatures.
 
+AGFX also ships its **own Vulkan backend** (`agfx/agfx_vulkan.cpp`, used on Linux), so a ported Vulkan engine keeps running on Vulkan there while gaining D3D12 (Windows) and Metal 4 (macOS) for free. If the engine has Vulkan-native library integrations (VMA-adjacent tooling, upscalers, profilers), `agfx_native.h` with `AGFX_EXPOSE_VULKAN` exposes the backing `VkInstance`/`VkDevice`/`VkQueue`/`VkImage`/`VkBuffer`/`VkDeviceMemory`/`VkSemaphore`, so those can survive the port on Linux instead of being deleted.
+
 ## Ownership
 
 **Owns:**
@@ -25,7 +27,7 @@ If the source engine still uses classic per-material `VkDescriptorSet`s (not alr
 
 ## References
 
-`agfx/agfx.h` is the entire public API surface — read it top to bottom once before starting; it's short enough to hold in full context. `agfx/agfx_d3d12.cpp` and `agfx/agfx_metal4.mm` are AGFX's own backend implementations — useful when unsure how a given AGFX call should behave in terms closer to Vulkan's explicit model (e.g. what a barrier actually does under the hood). `agfx_demo/` (particularly `deferred_renderer.cpp`, `agfx_demo_main.cpp`) is a complete reference engine already written against AGFX — a good target shape for a ported Vulkan renderer.
+`agfx/agfx.h` is the entire public API surface — read it top to bottom once before starting; it's short enough to hold in full context. `agfx/agfx_vulkan.cpp` is AGFX's own Vulkan backend — for a Vulkan port it is the single most useful reference, since it shows exactly which Vulkan construct each AGFX concept resolves to (e.g. `agfxFence` = timeline semaphore, `agfxCommandBufferMemoryBarrier` = global `VkMemoryBarrier2`); `agfx_d3d12.cpp` and `agfx_metal4.mm` are the sibling backends. `agfx_demo/` (particularly `deferred_renderer.cpp`, `agfx_demo_main.cpp`) is a complete reference engine already written against AGFX — a good target shape for a ported Vulkan renderer.
 
 ## Concept Translation Table
 
@@ -48,10 +50,10 @@ If the source engine still uses classic per-material `VkDescriptorSet`s (not alr
 | `VkRenderPass`+`VkFramebuffer` (classic) or `vkCmdBeginRendering`/`VkRenderingInfo` (dynamic rendering) | `agfxRenderTarget` + `agfxRenderPassBegin`/`agfxRenderPassCreateInfo` | AGFX's model is closest to dynamic rendering — attachments and load/store ops specified per-pass, no separate framebuffer-compatibility object to manage; `VkAttachmentLoadOp`/`StoreOp` map directly to `agfxLoadOp`/`agfxStoreOp` — see `agfx-render-targets-and-passes` |
 | `VkPipeline` (graphics) + `VkGraphicsPipelineCreateInfo` | `agfxRenderPipelineCreate` | blend/raster/depth-stencil state (minus stencil, which AGFX doesn't support) plus attachment formats folded into one `agfxRenderPipelineCreateInfo`, same as Vulkan's monolithic pipeline object |
 | `VkPipeline` (compute) | `agfxComputePipelineCreate` | straightforward 1:1 |
-| `VkShaderModule` + SPIR-V (from GLSL/HLSL via glslang/DXC) | `agfxShaderModule*` | AGFX shaders are HLSL compiled through `agfxCompileShader` (DXC → DXIL, translated to Metal IR on macOS) rather than SPIR-V — if the source is GLSL, it needs rewriting to HLSL, not just recompiling; if already HLSL compiled to SPIR-V, the binding-model rewrite is still required (bindless push constants, no `layout(set=,binding=)`) — see `agfx-writing-bindless-shaders` |
+| `VkShaderModule` + SPIR-V (from GLSL/HLSL via glslang/DXC) | `agfxShaderModule*` | AGFX shaders are HLSL compiled through `agfxCompileShader` — to DXIL on Windows, Metal IR on macOS, and SPIR-V on Linux (so the Linux output is still SPIR-V, just produced by AGFX's compiler) — if the source is GLSL, it needs rewriting to HLSL, not just recompiling; if already HLSL compiled to SPIR-V, the binding-model rewrite is still required (bindless push constants, no `layout(set=,binding=)`) — see `agfx-writing-bindless-shaders` |
 | `layout(set=N, binding=M)` (descriptor-set-bound) or `layout(binding=M) uniform` (bindless-heap-indexed, if already using descriptor indexing) | `ResourceHandle` fields on the push-constant struct + `ResourceDescriptorHeap`/`SamplerDescriptorHeap` | if the source shader is already bindless-style (indexing a big `sampler2D descriptors[]` array with a push-constant index), this is largely a rename; if it's classic per-set binding, it's a structural rewrite — see `agfx-writing-bindless-shaders` |
 | `VkVertexInputBindingDescription`/`VkVertexInputAttributeDescription` (vertex input state) | **deleted — vertex pulling** | AGFX shaders take `SV_VertexID` and manually load from an `AGFXStructuredBuffer`; there is no vertex input state to configure — see `agfx-writing-bindless-shaders` |
-| `VkSwapchainKHR` + `vkAcquireNextImageKHR`/`vkQueuePresentKHR` | `agfxSwapChain*` | `agfxSwapChainCreate/AcquireNextTexture/Present/Resize`; AGFX handles the acquire/present semaphore bookkeeping internally — see `agfx-presentation-and-swapchain` |
+| `VkSwapchainKHR` + `vkAcquireNextImageKHR`/`vkQueuePresentKHR` | `agfxSwapChain*` | `agfxSwapChainCreate/AcquireNextTexture/Present/Resize`; AGFX handles the acquire/present semaphore bookkeeping internally. On Linux the surface protocol (X11/XCB/Wayland) is chosen via `agfxDeviceCreateInfo::displayServerProtocol` and the window handle is an `agfxLinuxWindowHandle` — see `agfx-presentation-and-swapchain` |
 | `VkSampler` | `agfxSampler*` | `agfxSamplerCreate`, handle obtained the same way as texture/buffer views (bindless), not bound into a descriptor set |
 | NDC depth range `[0, 1]` (Vulkan already matches AGFX), clip-space Y sign flip conventions | matches AGFX directly | no depth-range fix needed (unlike GL/D3D11 ports); double-check any existing Y-flip workaround the engine has for swap chain vs. off-screen targets still makes sense under AGFX's own convention |
 
@@ -69,7 +71,7 @@ Because Vulkan and AGFX share the same broad shape (explicit command buffers, ex
 
 ## Advanced features: mesh shaders, ray tracing, GPU-driven draws
 
-All three are supported as of **AGFX v1.2.0** (ray tracing landed in v1.1.0, multi-draw indirect in v1.2.0). Each is capability-gated — query once and keep the fallback path alive, since none are universal (Apple silicon needs M3+ for ray tracing and mesh shaders):
+All three are supported as of **AGFX v1.2.0** (ray tracing landed in v1.1.0, multi-draw indirect in v1.2.0). Each is capability-gated — query once and keep the fallback path alive, since none are universal (in practice: Apple M3+, NVIDIA RTX 20+, AMD RX 6000+, or Intel Arc):
 
 ```cpp
 agfxDeviceInfo info = {};
@@ -83,7 +85,7 @@ agfxDeviceGetInfo(device, &info);
 | `VkAccelerationStructureKHR`, `vkCmdBuildAccelerationStructuresKHR` | `agfxAccelerationStructureCreate` + `agfxComputePassBuildAccelerationStructure` | scratch buffer sizing via `agfxAccelerationStructureGetSizes` |
 | `VK_KHR_ray_query` (`rayQueryEXT` in a compute shader) | `RayQuery` in HLSL | direct equivalent — this is the RT model AGFX supports |
 | `vkCmdTraceRaysKHR` + RT pipelines + SBT | **no equivalent** | see the mismatch note below |
-| `vkCmdDrawIndirectCount` / `vkCmdDrawIndexedIndirectCount` | `agfxIndirectBundle` + `PrepareIndirectBundle`/`ExecuteIndirectBundle` | AGFX's count buffer is the direct analogue of Vulkan's; the extra prepare step is a no-op on D3D12 and builds a Metal ICB |
+| `vkCmdDrawIndirectCount` / `vkCmdDrawIndexedIndirectCount` | `agfxIndirectBundle` + `PrepareIndirectBundle`/`ExecuteIndirectBundle` | AGFX's count buffer is the direct analogue of Vulkan's (the Linux backend literally calls `vkCmdDraw*IndirectCount`); the extra prepare step is a no-op on D3D12/Vulkan and builds a Metal ICB. If the engine relies on `gl_DrawID`, note AGFX_DRAW_ID's per-backend meaning — see `agfx-mdi` gotcha 6 |
 
 **The one structural mismatch to flag early:** AGFX supports **inline ray tracing only** — `RayQuery`/`TraceRayInline` from a compute shader. There is no ray-generation/any-hit/closest-hit pipeline, no hit groups, and no shader binding table. A source engine built around a ray-tracing *pipeline* needs those passes restructured into compute dispatches that trace inline and shade at the hit point themselves; that is a redesign, not a translation, and is worth surfacing to the user before starting.
 
@@ -92,7 +94,7 @@ Delegate the actual work: **agfx-raytracing** (acceleration structures, inline t
 ## Common Porting Pitfalls
 
 - **Trying to preserve descriptor set/pool/layout management.** If the source is classic (non-bindless) Vulkan, there's real deletion work here, not just a rename — `agfx-writing-bindless-shaders` for the replacement pattern.
-- **Assuming `agglomerate` has a Vulkan equivalent.** It doesn't — Vulkan already requires explicit per-barrier scope/stage masks, so every AGFX barrier from a Vulkan port should generally pass `agglomerate = true` (ordinary transitions) to get Metal-side hazard tracking; see `agfx-synchronization` for the one exception (present-adjacent transitions).
+- **Assuming `agglomerate` has a Vulkan equivalent.** It doesn't — AGFX's own Vulkan backend ignores the flag entirely (barriers are always emitted via `vkCmdPipelineBarrier2`), so every AGFX barrier from a Vulkan port should generally pass `agglomerate = true` (ordinary transitions) to get Metal-side hazard tracking; see `agfx-synchronization` for the one exception (present-adjacent transitions).
 - **Assuming a Vulkan ray-tracing *pipeline* ports across.** Acceleration structures and `VK_KHR_ray_query` map cleanly, but `vkCmdTraceRaysKHR`, RT pipeline stages, and the SBT have no AGFX equivalent — those passes must be restructured into inline-`RayQuery` compute dispatches. Surface this early. Indirect draws, by contrast, do port (see "Advanced features").
 - **Porting stencil-dependent logic** (`VK_FORMAT_D24_UNORM_S8_UINT`-based effects, stencil-buffer masking). AGFX's pipeline depth state has no stencil fields — flag it rather than silently dropping it.
 - **Missing that AGFX's depth range already matches Vulkan's `[0,1]`** and re-applying a GL-style depth-range fix that isn't needed, or missing a genuine Y-flip discrepancy between the source's off-screen-vs-swapchain convention and AGFX's own.

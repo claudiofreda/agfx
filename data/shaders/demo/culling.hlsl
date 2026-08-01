@@ -27,6 +27,9 @@ struct CullingPushConstants {
     uint gpuScene;
     uint primitiveCount;
     uint64_t bundleHandle;
+    // Consumed on Vulkan only: slot -> GPU-scene index, since Vulkan's DrawIndex builtin is the
+    // linear position in the compacted bundle rather than the drawId written below.
+    ResourceHandle drawIndirection;
 };
 
 AGFX_PUSH_CONSTANTS(CullingPushConstants, g_Constants);
@@ -56,5 +59,11 @@ void main_cs(uint3 dtid : SV_DispatchThreadID)
     if (AABBOutsideFrustum(inst.boundsMin, inst.boundsMax)) return;
 
     AGFXIndirectDrawIndexedBundle bundle = AGFXIndirectDrawIndexedBundle::Create(g_Constants.bundleHandle);
-    bundle.DrawIndexed(0, 0, index, inst.indexCount, 1, inst.indexOffset, 0, 0);
+    uint slot = bundle.DrawIndexed(0, 0, index, inst.indexCount, 1, inst.indexOffset, 0, 0);
+#if defined(AGFX_VULKAN)
+    // On D3D12/Metal the consuming shader gets `index` back through AGFX_DRAW_ID(); on Vulkan it
+    // gets the linear slot instead, so record slot -> index for the vertex shader to resolve.
+    AGFXRWByteAddressBuffer indirection = AGFXRWByteAddressBuffer::Create(g_Constants.drawIndirection);
+    indirection.Store(slot * 4, index);
+#endif
 }

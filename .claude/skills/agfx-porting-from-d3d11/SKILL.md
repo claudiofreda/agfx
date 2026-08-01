@@ -41,7 +41,7 @@ This is a bigger conceptual gap than porting from D3D12 or Vulkan (both of which
 | `ID3D11InputLayout` + `IASetInputLayout`/`IASetVertexBuffers` | **deleted — vertex pulling** | there is no input layout or vertex-buffer binding in AGFX; vertex shaders take `SV_VertexID` and manually load from an `AGFXStructuredBuffer` — see `agfx-writing-bindless-shaders` |
 | `VSSetShaderResources`/`PSSetShaderResources`/`CSSetShaderResources`, `*SetConstantBuffers`, `*SetSamplers` | **deleted — bindless** | no slot-based binding of any kind; every resource is accessed via `ResourceHandle` passed through push constants — see `agfx-writing-bindless-shaders` |
 | `register(t0)`/`register(b0)`/`register(s0)` in HLSL, tied to slot-binding calls | AGFX's bindless header + `ResourceHandle` | shader HLSL needs rewriting, not just host code — see `agfx-writing-bindless-shaders` |
-| `ID3D11VertexShader`/`PixelShader`/`ComputeShader` + `CreateVertexShader` etc. (from precompiled `.cso`/`ID3DBlob`) | `agfxShaderModule*` | AGFX compiles HLSL itself via `agfxCompileShader` (DXC → DXIL, translated to Metal IR on macOS); if the D3D11 engine compiles offline, switch to AGFX's runtime/build-time compiler pipeline — see `agfx-writing-bindless-shaders` |
+| `ID3D11VertexShader`/`PixelShader`/`ComputeShader` + `CreateVertexShader` etc. (from precompiled `.cso`/`ID3DBlob`) | `agfxShaderModule*` | AGFX compiles HLSL itself via `agfxCompileShader` (DXC → DXIL on Windows, Metal IR on macOS, SPIR-V on Linux); if the D3D11 engine compiles offline, switch to AGFX's runtime/build-time compiler pipeline — see `agfx-writing-bindless-shaders` |
 | `ID3D11BlendState`/`CreateBlendState` | fields on `agfxRenderPipelineCreateInfo` (`blendEnable[]`, `srcColorBlendFactor[]`, etc.) | baked into the pipeline object at creation, not a separately bound state object |
 | `ID3D11RasterizerState`/`CreateRasterizerState` | fields on `agfxRenderPipelineCreateInfo` (`fillMode`, `cullMode`, `frontFace`) | same — baked into the pipeline, no separate bind call |
 | `ID3D11DepthStencilState`/`CreateDepthStencilState` | fields on `agfxRenderPipelineCreateInfo` (`depthTestEnable`, `depthWriteEnable`, `depthCompareOp`) | same; AGFX has no separate stencil support to map — drop stencil-only logic or flag it as unsupported |
@@ -65,7 +65,7 @@ This is a bigger conceptual gap than porting from D3D12 or Vulkan (both of which
 
 ## Advanced features: mesh shaders, ray tracing, GPU-driven draws
 
-All three are supported as of **AGFX v1.2.0** (ray tracing landed in v1.1.0, multi-draw indirect in v1.2.0). Each is capability-gated — query once and keep the fallback path alive, since none are universal (Apple silicon needs M3+ for ray tracing and mesh shaders):
+All three are supported as of **AGFX v1.2.0** (ray tracing landed in v1.1.0, multi-draw indirect in v1.2.0). Each is capability-gated — query once and keep the fallback path alive, since none are universal (in practice: Apple M3+, NVIDIA RTX 20+, AMD RX 6000+, or Intel Arc):
 
 ```cpp
 agfxDeviceInfo info = {};

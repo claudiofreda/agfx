@@ -7,7 +7,7 @@ description: ALWAYS use when porting an existing D3D12 engine or renderer to AGF
 
 ## Overview
 
-AGFX is a thin (~5000 LOC) bindless-first wrapper over D3D12 and Metal 4. Porting a D3D12 engine to it is mostly a *simplification*: AGFX collapses root signatures, descriptor tables, and per-draw descriptor binding into one bindless model (`ResourceHandle` + `ResourceDescriptorHeap`), so a lot of D3D12 binding machinery is deleted outright rather than translated. The parts that do translate 1:1 are resource creation, command recording, barriers, and pipeline state.
+AGFX is a thin (<10k LOC) bindless-first wrapper over D3D12, Metal 4, and Vulkan. Porting a D3D12 engine to it is mostly a *simplification*: AGFX collapses root signatures, descriptor tables, and per-draw descriptor binding into one bindless model (`ResourceHandle` + `ResourceDescriptorHeap`), so a lot of D3D12 binding machinery is deleted outright rather than translated. The parts that do translate 1:1 are resource creation, command recording, barriers, and pipeline state.
 
 This skill is the *index* into the subsystem skills — read it first to get the map, then dispatch into the specific skill for the subsystem you're touching:
 - `agfx-presentation-and-swapchain` — swap chain / back buffer
@@ -27,7 +27,7 @@ This skill is the *index* into the subsystem skills — read it first to get the
 
 **Doesn't own:**
 - Subsystem-specific API detail once you know which AGFX call replaces a given D3D12 call — that's the four skills above
-- Metal-specific porting concerns (this repo doesn't touch Metal directly; AGFX's Metal 4 backend is `agfx/agfx_metal4.mm`, useful only as a curiosity, not something the porting engine author should touch)
+- Metal- or Vulkan-specific porting concerns (this repo doesn't touch those APIs directly; AGFX's own backends are `agfx/agfx_metal4.mm` and `agfx/agfx_vulkan.cpp`, useful only as curiosities, not something the porting engine author should touch)
 
 ## References
 
@@ -37,7 +37,7 @@ This skill is the *index* into the subsystem skills — read it first to get the
 
 | D3D12 | AGFX | Notes |
 |---|---|---|
-| `ID3D12Device` | `agfxDevice*` | `agfxDeviceCreate` also takes the allocator callbacks and picks the backend (D3D12/Metal4) at compile time |
+| `ID3D12Device` | `agfxDevice*` | `agfxDeviceCreate` also takes the allocator callbacks and picks the backend (D3D12/Metal 4/Vulkan) at compile time |
 | `ID3D12CommandQueue` | `agfxCommandQueue*` | `agfxCommandQueueCreate`, typed via `agfxCommandQueueType` |
 | `ID3D12GraphicsCommandList` | `agfxCommandBuffer*` | `agfxCommandBufferCreate/Begin/End/Reset` |
 | `ID3D12Fence` + `SetEventOnCompletion`/`WaitForSingleObject` | `agfxFence*` | one fence type for both CPU↔GPU and GPU↔GPU waits — see `agfx-synchronization` |
@@ -48,7 +48,7 @@ This skill is the *index* into the subsystem skills — read it first to get the
 | `CreateCommittedResource` (buffer) | `agfxBufferCreate` | `agfxBufferMemoryType` replaces heap type (DEFAULT/UPLOAD/READBACK) |
 | SRV/UAV/CBV descriptor (`CreateShaderResourceView` etc.) | `agfxTextureView`/`agfxBufferView` | creation returns a `ResourceHandle` for bindless shader access, rather than writing into a caller-managed heap slot |
 | Sampler descriptor | `agfxSampler` | `agfxSamplerCreate`, handle obtained the same way as texture/buffer views |
-| `ResourceBarrier` (transition) | `agfxCommandBufferTextureBarrier` (textures) / `agfxCommandBufferMemoryBarrier` (buffers, acceleration structures) | states map closely (`agfxResourceState` mirrors `D3D12_RESOURCE_STATES`); has an extra `agglomerate` flag D3D12 doesn't need — ignored on the D3D12 backend, meaningful on Metal — see `agfx-synchronization`. Unlike a legacy `ResourceBarrier`, `agfxCommandBufferMemoryBarrier` takes no resource argument (buffers/AS have no layout to transition, so it's a memory-wide barrier); AGFX's own D3D12 backend implements it as an Enhanced Barriers global barrier, not `ResourceBarrier` |
+| `ResourceBarrier` (transition) | `agfxCommandBufferTextureBarrier` (textures) / `agfxCommandBufferMemoryBarrier` (buffers, acceleration structures) | states map closely (`agfxResourceState` mirrors `D3D12_RESOURCE_STATES`); has an extra `agglomerate` flag D3D12 doesn't need — ignored on the D3D12 and Vulkan backends, meaningful on Metal — see `agfx-synchronization`. Unlike a legacy `ResourceBarrier`, `agfxCommandBufferMemoryBarrier` takes no resource argument (buffers/AS have no layout to transition, so it's a memory-wide barrier); AGFX's own D3D12 backend implements it as an Enhanced Barriers global barrier, not `ResourceBarrier` |
 | UAV barrier | `agfxComputePassTextureUAVBarrier`/`BufferUAVBarrier` | scoped to within a compute pass |
 | `OMSetRenderTargets` + manual load/clear | `agfxRenderTarget` + `agfxRenderPassBegin`/`agfxRenderPassCreateInfo` attachments | load/store ops are explicit (`agfxLoadOperation`/`agfxStoreOperation`), similar to D3D12's render-pass API (`BeginRenderPass`) if the engine already uses that, otherwise new relative to bare `OMSetRenderTargets` |
 | `IASetVertexBuffers`/input layout | **deleted — vertex pulling** | AGFX shaders take `SV_VertexID` and manually load from a `AGFXStructuredBuffer` in the vertex shader; there is no input-assembler vertex buffer binding — see `agfx-writing-bindless-shaders` |
@@ -72,7 +72,7 @@ Porting shader-and-binding code before device/resource plumbing compiles but can
 
 ## Advanced features: mesh shaders, ray tracing, GPU-driven draws
 
-All three are supported as of **AGFX v1.2.0** (ray tracing landed in v1.1.0, multi-draw indirect in v1.2.0). Each is capability-gated — query once and keep the fallback path alive, since none are universal (Apple silicon needs M3+ for ray tracing and mesh shaders):
+All three are supported as of **AGFX v1.2.0** (ray tracing landed in v1.1.0, multi-draw indirect in v1.2.0). Each is capability-gated — query once and keep the fallback path alive, since none are universal (in practice: Apple M3+, NVIDIA RTX 20+, AMD RX 6000+, or Intel Arc):
 
 ```cpp
 agfxDeviceInfo info = {};
@@ -95,5 +95,5 @@ Delegate the actual work: **agfx-raytracing** (acceleration structures, inline t
 
 - **Trying to preserve the descriptor-heap-slot-management code.** There's nothing to preserve — delete it. AGFX hands back a `ResourceHandle` at view-creation time; there's no caller-managed heap index arithmetic.
 - **Leaving a second root CBV in the shader.** AGFX shaders only have `register(b0)` (push constants). Any additional per-frame/per-scene constant buffer must go through the "handle nested in push constants, loaded as a one-element `AGFXStructuredBuffer`" pattern in `agfx-writing-bindless-shaders`, not a second binding slot.
-- **Getting `agglomerate` backwards.** It's silently correct on the D3D12 side of a port (the flag is ignored there) and only breaks once the same code path is exercised on Metal — see `agfx-synchronization` before assuming a barrier port is done just because it builds and runs on Windows.
+- **Getting `agglomerate` backwards.** It's silently correct on the D3D12 and Vulkan sides of a port (the flag is ignored there) and only breaks once the same code path is exercised on Metal — see `agfx-synchronization` before assuming a barrier port is done just because it builds and runs on Windows or Linux.
 - **Assuming DXR ports across as-is.** Acceleration structures and `ExecuteIndirect` do map (see "Advanced features"), but AGFX has no ray-tracing *pipeline* — no `DispatchRays`, no shader binding table, no hit groups. An engine whose RT is built on an RTPSO needs those passes restructured into inline-`RayQuery` compute dispatches. Surface this early rather than discovering it mid-port.

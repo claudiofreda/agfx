@@ -88,6 +88,12 @@ int main()
     deviceCreateInfo.tempAllocate = agfxAlloc;
     deviceCreateInfo.tempFree = agfxDealloc;
     deviceCreateInfo.enableValidation = false;
+#if GAME_LINUX
+    // The Vulkan backend needs to know which surface extension to enable before device creation;
+    // SDL has already picked the session's display server by now.
+    const bool isWayland = SDL_strcmp(SDL_GetCurrentVideoDriver(), "wayland") == 0;
+    deviceCreateInfo.displayServerProtocol = isWayland ? AGFX_DISPLAY_SERVER_PROTOCOL_WAYLAND : AGFX_DISPLAY_SERVER_PROTOCOL_X11;
+#endif
     agfxDevice* device = agfxDeviceCreate(&deviceCreateInfo);
 
     agfxDeviceInfo deviceInfo = {};
@@ -108,9 +114,19 @@ int main()
     swapChainCreateInfo.vsync = true;
 #if GAME_MAC
     swapChainCreateInfo.handle = metalLayer;
+#elif GAME_LINUX
+    agfxLinuxWindowHandle linuxWindowHandle = {};
+    if (isWayland) {
+        linuxWindowHandle.display = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, NULL);
+        linuxWindowHandle.window = (uint64_t)(uintptr_t)SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, NULL);
+    } else {
+        linuxWindowHandle.display = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_X11_DISPLAY_POINTER, NULL);
+        linuxWindowHandle.window = (uint64_t)SDL_GetNumberProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
+    }
+    swapChainCreateInfo.handle = &linuxWindowHandle;
 #else
     swapChainCreateInfo.handle = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
-#endif  
+#endif
     agfxSwapChain* swapChain = agfxSwapChainCreate(device, &swapChainCreateInfo);
 
     agfxCommandBuffer* commandBuffers[kFramesInFlight];

@@ -28,6 +28,10 @@ typedef struct agfxShaderCompilerOptions {
 
     uint8_t usePointTopology;
     uint8_t addDebugSymbols;
+
+    /// @brief Path to the dxcompiler shared library to dlopen on Linux. Ignored on Windows/macOS,
+    ///        which link DXC statically. If NULL/empty on Linux, defaults to "data/dlls/libdxcompiler.so".
+    const char* dxCompilerPath;
 } agfxShaderCompilerOptions;
 
 typedef struct agfxShaderCompilerResult {

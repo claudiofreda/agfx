@@ -7,7 +7,7 @@ description: ALWAYS use when writing or modifying HLSL shaders for AGFX, or wiri
 
 ## Overview
 
-AGFX shaders are HLSL, compiled with DXC to DXIL (SM 6.6) and then, on macOS, translated to Metal IR via the Metal shader converter (`agfx_shader/agfx_shader_compiler_mac.mm`) using `IRRootSignatureFlagSamplerHeapDirectlyIndexed | IRRootSignatureFlagCBVSRVUAVHeapDirectlyIndexed` — i.e. **fully bindless, direct-indexed heaps**. There is no per-draw descriptor table, no `register(t0, space0)` binding model, and no `Bind*` API on the C side beyond push constants. Every resource a shader touches — textures, buffers, samplers — is accessed by a `ResourceHandle` (a plain `uint` index) pulled out of `ResourceDescriptorHeap`/`SamplerDescriptorHeap` and wrapped in one of the `AGFX*` helper classes declared in `data/shaders/agfx.h`.
+AGFX shaders are HLSL (SM 6.6), compiled with DXC to a per-platform target: DXIL on Windows (`agfx_shader_compiler_windows.cpp`); DXIL then translated to Metal IR via the Metal shader converter on macOS (`agfx_shader_compiler_mac.mm`, using `IRRootSignatureFlagSamplerHeapDirectlyIndexed | IRRootSignatureFlagCBVSRVUAVHeapDirectlyIndexed`); SPIR-V on Linux (`agfx_shader_compiler_linux.cpp`, DXC's `-spirv` target via a `dlopen`'d `libdxcompiler.so` — path settable through `agfxShaderCompilerOptions::dxCompilerPath`, defaulting to `data/dlls/libdxcompiler.so`). Every target is **fully bindless, direct-indexed heaps**. The compiler defines `AGFX_METAL` on macOS and `AGFX_VULKAN` on Linux automatically; `data/shaders/agfx.h` uses these to hide the per-backend differences (e.g. `[[vk::push_constant]]`), so shader authors never branch on them for ordinary resource access. There is no per-draw descriptor table, no `register(t0, space0)` binding model, and no `Bind*` API on the C side beyond push constants. Every resource a shader touches — textures, buffers, samplers — is accessed by a `ResourceHandle` (a plain `uint` index) pulled out of `ResourceDescriptorHeap`/`SamplerDescriptorHeap` and wrapped in one of the `AGFX*` helper classes declared in `data/shaders/agfx.h`.
 
 The host side hands shaders these handles two ways: almost always via push constants (`agfxRenderPassPushConstants`/`agfxComputePassPushConstants`, bound at `register(b0)`), or, for structured scene/per-draw constant data, by putting the handle to a constant buffer *inside* the push constants and loading it as an `AGFXStructuredBuffer` in the shader (see `sceneCB` pattern below) rather than a second root CBV.
 
@@ -15,9 +15,9 @@ The host side hands shaders these handles two ways: almost always via push const
 
 **Owns:**
 - The bindless resource-access pattern: `ResourceHandle`, `AGFXTexture1D/2D/2DArray/3D/Cube<T>`, `AGFXRWTexture1D/2D/3D<T>`, `AGFXStructuredBuffer<T>`/`AGFXRWStructuredBuffer<T>`, `AGFXByteAddressBuffer`/`AGFXRWByteAddressBuffer`, `AGFXSampler`/`AGFXComparisonSampler`, `AGFXRaytracingAccelerationStructure`
-- Push constants: `AGFX_PUSH_CONSTANTS(type, name)` at `register(b0)`, and the optional per-draw ID at `register(b1)` (`AGFX_DECLARE_DRAW_ID()`/`AGFX_DRAW_ID()`), which is how a shader replayed from an indirect bundle recovers which draw it is
+- Push constants: `AGFX_PUSH_CONSTANTS(type, name)` at `register(b0)` (a `[[vk::push_constant]]` block on Vulkan — the macro hides it), and the optional per-draw ID (`AGFX_DECLARE_DRAW_ID()`/`AGFX_DRAW_ID()`: `register(b1)` on D3D12/Metal, the SPIR-V `DrawIndex` builtin on Vulkan), which is how a shader replayed from an indirect bundle recovers which draw it is — but note the value's meaning diverges on Vulkan, see `agfx-mdi`
 - Entry point / stage conventions (`main_vs`, `main_ps`, `main_cs`, `main_ms`, `main_as`) and matching `agfxShaderModuleType`
-- `agfxShaderCompilerOptions`/`agfxShaderCompilerResult` and `agfxCompileShader` — the HLSL → DXIL → (macOS) Metal IR pipeline
+- `agfxShaderCompilerOptions`/`agfxShaderCompilerResult` and `agfxCompileShader` — the HLSL → DXIL (Windows) / Metal IR (macOS) / SPIR-V (Linux) pipeline
 - Wiring compiled `agfxShaderModule`s into `agfxRenderPipelineCreateInfo`/`agfxComputePipelineCreateInfo`
 
 **Doesn't own:**
@@ -28,7 +28,7 @@ The host side hands shaders these handles two ways: almost always via push const
 
 ## References
 
-The bindless helper header is a single shared file at `data/shaders/agfx.h`, included by every shader in the repo as `#include "data/shaders/agfx.h"` (a repo-root-relative path, not relative to the including shader) — **always `#include` it first** in a new shader and read it before inventing a new resource-access pattern; it is the complete list of what's available. Real shader examples: `data/shaders/demo/gbuffer.hlsl` (vertex+fragment, structured vertex pulling, textures+sampler), `data/shaders/demo/ssao.hlsl` (compute, RW texture output, scene CB), `data/shaders/demo/mipgen.hlsl` (minimal compute), `data/shaders/demo/deferred_lighting.hlsl`, `data/shaders/demo/shadow_depth.hlsl`, `data/shaders/demo/tonemap.hlsl`, `data/shaders/demo/imgui.hlsl`. Host-side compile+load pattern: `agfx_demo/deferred_renderer.cpp`'s `CompileShader` helper, `agfx_demo/ssao.cpp`, `agfx_demo/agfx_mipgen.cpp`. Compiler internals: `agfx_shader/agfx_shader_compiler.h` and `agfx_shader/agfx_shader_compiler_mac.mm`.
+The bindless helper header is a single shared file at `data/shaders/agfx.h`, included by every shader in the repo as `#include "data/shaders/agfx.h"` (a repo-root-relative path, not relative to the including shader) — **always `#include` it first** in a new shader and read it before inventing a new resource-access pattern; it is the complete list of what's available. Real shader examples: `data/shaders/demo/gbuffer.hlsl` (vertex+fragment, structured vertex pulling, textures+sampler), `data/shaders/demo/gbuffer_indirect.hlsl` (the GPU-driven variant, split into its own file for the Vulkan push-constant rule below), `data/shaders/demo/ssao.hlsl` (compute, RW texture output, scene CB), `data/shaders/demo/mipgen.hlsl` (minimal compute), `data/shaders/demo/deferred_lighting.hlsl`, `data/shaders/demo/shadow_depth.hlsl`, `data/shaders/demo/tonemap.hlsl`, `data/shaders/demo/imgui.hlsl`. Host-side compile+load pattern: `agfx_demo/deferred_renderer.cpp`'s `CompileShader` helper, `agfx_demo/ssao.cpp`, `agfx_demo/agfx_mipgen.cpp`. Compiler internals: `agfx_shader/agfx_shader_compiler.h` and the per-platform `agfx_shader_compiler_windows.cpp`/`_mac.mm`/`_linux.cpp`.
 
 ## Design Patterns
 
@@ -120,7 +120,7 @@ The `[numthreads(x, y, z)]` values must match the `groupSizeX/Y/Z` passed to `ag
 
 ### Entry point / stage naming convention
 
-Existing shaders use `main_vs`, `main_ps`, `main_cs`, and (for mesh pipelines) `main_ms`/`main_as`. Match this convention for new shaders and pass the matching `agfxShaderStage`/`agfxShaderModuleType` pair host-side — the DXC target profile (`vs_6_6`, `ps_6_6`, `cs_6_6`, `ms_6_6`, `as_6_6`) is derived from `agfxShaderStage` in `agfx_shader_compiler_mac.mm`'s `ProfileFromType`, so stage and entry point must agree.
+Existing shaders use `main_vs`, `main_ps`, `main_cs`, and (for mesh pipelines) `main_ms`/`main_as`. Match this convention for new shaders and pass the matching `agfxShaderStage`/`agfxShaderModuleType` pair host-side — the DXC target profile (`vs_6_6`, `ps_6_6`, `cs_6_6`, `ms_6_6`, `as_6_6`) is derived from `agfxShaderStage` in each platform's `agfx_shader_compiler_*` file, so stage and entry point must agree.
 
 ### Host-side: compile → shader module → pipeline
 
@@ -145,11 +145,13 @@ agfxShaderModule* fragmentModule = agfxShaderModuleCreate(device, &moduleInfo);
 
 Compile vertex+fragment (or mesh[+task]) modules separately and attach both to `agfxRenderPipelineCreateInfo::vertexShader`/`fragmentShader` (or `meshShader`/`taskShader`); a single `computeShader` module goes into `agfxComputePipelineCreateInfo`. `agfxShaderModuleDestroy` is safe immediately after the pipeline(s) built from it are created — the module isn't referenced afterward.
 
-For mesh/task shaders, read `result.meshSizeX/Y/Z`/`taskSizeX/Y/Z` (populated via Metal shader-converter reflection, not something you hand-specify) and feed them into `agfxRenderPipelineCreateInfo::meshGroupSizeX/Y/Z`/`taskGroupSizeX/Y/Z` — these must match what the shader actually declares or dispatch counts silently disagree between the two backends.
+For mesh/task shaders, read `result.meshSizeX/Y/Z`/`taskSizeX/Y/Z` (populated by compiler reflection — Metal shader converter on macOS, SPIRV-Reflect on Linux — not something you hand-specify) and feed them into `agfxRenderPipelineCreateInfo::meshGroupSizeX/Y/Z`/`taskGroupSizeX/Y/Z` — these must match what the shader actually declares or dispatch counts silently disagree between backends.
 
 ### Common mistakes
 
-- Declaring a second `register(bN)`/`register(tN)`/`register(sN)` resource binding instead of routing everything through push constants + `ResourceDescriptorHeap`/`SamplerDescriptorHeap` — AGFX's root signature only has two root-constants parameters (`b0` push constants, `b1` draw ID) and direct-indexed heaps; anything else won't be bound.
+- Declaring a second `register(bN)`/`register(tN)`/`register(sN)` resource binding instead of routing everything through push constants + `ResourceDescriptorHeap`/`SamplerDescriptorHeap` — AGFX's binding surface is exactly the push constants (`b0`), the draw ID (`b1` on D3D12/Metal, a builtin on Vulkan), and direct-indexed heaps; anything else won't be bound.
+- **One `AGFX_PUSH_CONSTANTS` block per translation unit.** The SPIR-V backend rejects a file that declares more than one `[[vk::push_constant]]` block, even when only one entry point is selected for compilation — a file with multiple entry points that need *different* push-constant structs must be split into separate `.hlsl` files. This is why the demo's GPU-driven G-buffer path lives in `gbuffer_indirect.hlsl`, not in `gbuffer.hlsl`.
+- Calling `AGFX_DRAW_ID()` in a pixel shader. On Vulkan it resolves to the SPIR-V `DrawIndex` builtin, valid only in vertex/mesh/task stages — read it in the vertex shader and forward it through a `nointerpolation` interpolant (see `gbuffer_indirect.hlsl`).
 - Using `AGFXTexture2D` (read-only) where the texture was created with `AGFX_TEXTURE_USAGE_STORAGE` and needs `Store`, or vice versa — pick the wrapper matching the host-side `agfxTextureUsage`/`agfxTextureViewCreateInfo::writeable`.
 - Forgetting the bounds check in a compute shader before writing to an `AGFXRWTexture2D` sized smaller than `numthreads`-rounded dispatch dimensions.
 - Mismatching entry-point name and `agfxShaderStage`/`agfxShaderModuleType` between the compile options and the module create info — the DXC profile is derived from the stage, and a mismatch will misdirect the compiler or produce a module that doesn't bind to the intended pipeline slot.

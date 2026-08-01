@@ -18,6 +18,7 @@
  * @code
  *   #define AGFX_EXPOSE_D3D12   // pulls in <d3d12.h> and <dxgi1_6.h>
  *   #define AGFX_EXPOSE_METAL   // pulls in <Metal/Metal.h> and <QuartzCore/CAMetalLayer.h>
+ *   #define AGFX_EXPOSE_VULKAN  // pulls in <vulkan/vulkan.h>
  *   #include <agfx/agfx_native.h>
  * @endcode
  *
@@ -168,6 +169,46 @@ AGFX_NATIVE_MTL(MTLSharedEvent) agfxNativeGetMTLSharedEvent(agfxFence* fence);
 AGFX_NATIVE_MTL_CLASS(CAMetalLayer) agfxNativeGetCAMetalLayer(agfxSwapChain* swapChain);
 
 #endif // AGFX_EXPOSE_METAL
+
+// ---------------------------------------------------------------------------------------------
+// Vulkan
+// ---------------------------------------------------------------------------------------------
+
+#if defined(AGFX_EXPOSE_VULKAN)
+
+#if !defined(AGFX_NATIVE_NO_INCLUDES)
+#include <vulkan/vulkan.h>
+#endif
+
+/// @brief Returns the VkInstance backing the device.
+VkInstance agfxNativeGetVkInstance(agfxDevice* device);
+
+/// @brief Returns the VkPhysicalDevice the device was created on, for adapter/vendor capability queries.
+VkPhysicalDevice agfxNativeGetVkPhysicalDevice(agfxDevice* device);
+
+/// @brief Returns the VkDevice backing the device. The root object every native library wants.
+VkDevice agfxNativeGetVkDevice(agfxDevice* device);
+
+/// @brief Returns the VkQueue backing the queue, for libraries that submit their own work.
+VkQueue agfxNativeGetVkQueue(agfxCommandQueue* queue);
+
+/// @brief Returns the VkImage backing a texture.
+VkImage agfxNativeGetVkImage(agfxTexture* texture);
+
+/// @brief Returns the VkBuffer backing a buffer.
+VkBuffer agfxNativeGetVkBuffer(agfxBuffer* buffer);
+
+/// @brief Returns the VkDeviceMemory backing a placement heap, for placing native resources alongside
+///        AGFX ones. You are responsible for offsets not colliding with AGFX's -- see agfx-resources.
+VkDeviceMemory agfxNativeGetVkHeapMemory(agfxHeap* heap);
+
+/// @brief Returns the VkSemaphore (timeline) backing a fence, for interop with a library that
+///        signals or waits itself.
+/// @note AGFX tracks its own monotonic value for this timeline. Signal your own values through
+///       agfxCommandQueueSignal rather than the raw semaphore, or the two will fight over the sequence.
+VkSemaphore agfxNativeGetVkSemaphore(agfxFence* fence);
+
+#endif // AGFX_EXPOSE_VULKAN
 
 #ifdef __cplusplus
 }

@@ -9,10 +9,10 @@ description: ALWAYS use when creating, uploading to, aliasing, or destroying AGF
 
 AGFX resources come in two layers that are easy to conflate: the **allocation** (`agfxTexture`, `agfxBuffer`) and the **view** (`agfxTextureView`, `agfxBufferView`, `agfxSampler`). The allocation owns memory; the view owns the bindless descriptor a shader actually indexes. Nothing is bound by slot — a shader reaches a resource only through the `uint64_t` handle from `agfxTextureViewGetHandle`/`agfxBufferViewGetHandle`, passed in via push constants.
 
-Three rules cause most resource bugs in AGFX, and all three are invisible on one backend while fatal on the other:
+Three rules cause most resource bugs in AGFX, and all three are invisible on some backends while fatal on another:
 
-1. **Usage flags are a contract, not a hint.** A texture without `AGFX_TEXTURE_USAGE_STORAGE` cannot get a writeable view; a buffer without `AGFX_BUFFER_USAGE_SHADER_WRITE` cannot get a writeable one. D3D12 tends to tolerate over-broad flags; Metal derives its `MTLTextureUsage` directly from them and produces a black texture or a validation failure.
-2. **Residency is explicit.** Creating a resource does not make it usable. `agfxDeviceMakeResourcesResident` must be called after creation and before the first submit that touches it — on Metal this commits the device residency set, and a resource missing from it is a GPU fault, not a warning. It is a no-op on D3D12, so forgetting it is a Metal-only crash.
+1. **Usage flags are a contract, not a hint.** A texture without `AGFX_TEXTURE_USAGE_STORAGE` cannot get a writeable view; a buffer without `AGFX_BUFFER_USAGE_SHADER_WRITE` cannot get a writeable one. D3D12 tends to tolerate over-broad flags; Metal derives its `MTLTextureUsage` (and Vulkan its `VkImageUsageFlags`) directly from them and produces a black texture or a validation failure.
+2. **Residency is explicit.** Creating a resource does not make it usable. `agfxDeviceMakeResourcesResident` must be called after creation and before the first submit that touches it — on Metal this commits the device residency set, and a resource missing from it is a GPU fault, not a warning. It is a no-op on D3D12 and Vulkan, so forgetting it is a Metal-only crash.
 3. **Destruction is not deferred.** No AGFX object retains a resource for you, and command buffers do not either. Destroying a resource an in-flight command buffer still references is a use-after-free. Drain first — see `agfx-synchronization`.
 
 ## Ownership
@@ -93,7 +93,7 @@ agfxDeviceMakeResourcesResident(device);
 memcpy(agfxBufferMap(staging), data, size);
 agfxBufferUnmap(staging);
 
-// Copies are recorded in a compute pass on both backends.
+// Copies are recorded in a compute pass on every backend.
 agfxComputePass* pass = agfxComputePassBegin(cmd, "upload");
 agfxComputePassCopyBufferToBuffer(pass, staging, dst, 0, 0, size);
 agfxComputePassEnd(pass);
@@ -150,7 +150,7 @@ Constraints worth knowing up front:
 
 - **Textures may only be placed in `AGFX_BUFFER_MEMORY_TYPE_GPU_ONLY` heaps.** Both backends enforce this.
 - **A buffer's `memoryType` must equal its heap's.** Metal requires the storage modes to match; the Metal backend rejects a mismatch rather than silently picking one.
-- `agfxHeapCreate` returns `nullptr` on a D3D12 adapter reporting resource heap tier 1. Every Metal 4 device supports placement heaps, so there is no equivalent Metal gate. Always handle the `nullptr` and fall back to committed allocations.
+- `agfxHeapCreate` returns `nullptr` on a D3D12 adapter reporting resource heap tier 1. Every Metal 4 device supports placement heaps, and the Vulkan backend has no tier gate either (a heap is one `VkDeviceMemory` allocation; creation only fails when no device memory type satisfies the request, or on OOM). Always handle the `nullptr` and fall back to committed allocations.
 - The allocation-info queries return `{0, 0}` on failure — the natural place to detect an unsupported device early.
 
 ### The aliasing barrier
@@ -179,20 +179,21 @@ Three rules:
 ### Backend notes (if editing a backend)
 
 - **D3D12** requires resource heap tier 2, checked once at device creation into `agfxDevice::supportsPlacementHeaps`; placed resources use `CreatePlacedResource`. Enhanced Barriers has no aliasing barrier type, so `agfxCommandBufferAliasingBarrier` emits *two* groups: a global barrier carrying the outgoing state's real sync+access scopes (the only thing that flushes the outgoing writes), and a texture barrier with `LAYOUT_UNDEFINED` → the incoming layout and `BARRIER_FLAG_DISCARD`.
+- **Vulkan** backs a heap with a single `VkDeviceMemory` allocation (flagged for device addresses); placed resources bind into it at their `heapOffset`. `agfxCommandBufferAliasingBarrier` has the same two-part shape as D3D12's: a global `VkMemoryBarrier2` carrying the outgoing state's real scopes (the flush), plus a `VkImageMemoryBarrier2` with `oldLayout = UNDEFINED` activating the incoming image — Vulkan just carries both in one `VkDependencyInfo`.
 - **Metal** uses `MTLHeapTypePlacement` (not `Automatic`, which picks its own offsets). The heap, and every resource placed in it, must agree on storage mode, CPU cache mode and hazard tracking mode — all derived from the heap's `memoryType`, with `MTLHazardTrackingModeUntracked` since AGFX synchronizes explicitly. **The heap is added to the residency set once; placed resources deliberately skip the per-resource `addAllocation`**, because making a heap resident makes everything in it resident. Sizes and alignments come from `heapTextureSizeAndAlignWithDescriptor:`/`heapBufferSizeAndAlignWithLength:options:`, which must be queried with the exact descriptor creation will use or the reported alignment is wrong. The aliasing barrier needs no special path: the stage tracker is already resource-agnostic and already emits `MTL4VisibilityOptionDevice`, which is what Apple prescribes for ordinary placement-heap aliasing.
 
 ## Common Mistakes
 
-- **Forgetting `agfxDeviceMakeResourcesResident` after creating resources.** No-op on D3D12, GPU fault on Metal. Call it once after a batch of creations, not per resource, and never per frame.
+- **Forgetting `agfxDeviceMakeResourcesResident` after creating resources.** No-op on D3D12 and Vulkan, GPU fault on Metal. Call it once after a batch of creations, not per resource, and never per frame.
 - **Requesting a writeable view without the matching usage flag** (`AGFX_TEXTURE_USAGE_STORAGE` / `AGFX_BUFFER_USAGE_SHADER_WRITE`). Produces a black texture or a validation error rather than an obvious failure at create time.
 - **Mapping a `GPU_ONLY` buffer.** Only `UPLOAD` and `READBACK` are mappable; go through a staging buffer.
-- **`agfxTextureReplaceRegion` on a heap-placed texture.** Placed textures are GPU-private on both backends. Use a copy pass.
-- **Hardcoding a heap offset or alignment.** Alignment differs by backend and by create info; an offset derived from D3D12's numbers is not valid on Metal. Always go through the allocation-info query, and re-query if the create info changes.
+- **`agfxTextureReplaceRegion` on a heap-placed texture.** Placed textures are GPU-private on every backend. Use a copy pass.
+- **Hardcoding a heap offset or alignment.** Alignment differs by backend and by create info; an offset derived from one backend's numbers is not valid on another. Always go through the allocation-info query, and re-query if the create info changes.
 - **Destroying a heap before the resources placed in it**, or a resource before its views. Nothing is refcounted.
 - **Destroying any resource without draining first** when in-flight work may reference it.
-- **Aliasing without the barrier, or with `agglomerate = false`.** Runs correctly on D3D12 and corrupts on Metal — the worst possible failure shape.
+- **Aliasing without the barrier, or with `agglomerate = false`.** Runs correctly on D3D12 and Vulkan (which ignore the flag) and corrupts on Metal — the worst possible failure shape.
 - **Assuming aliased memory carries data across the alias.** Contents are undefined; initialize the incoming resource.
 
 ## Verification
 
-The aliasing tests are the executable spec — `xmake run agfx_tests --filter Alias` runs nine (three scenarios × C/C++/ez). `AliasHeapTransients` is golden-compared, and the golden is byte-identical across backends, so a Metal-vs-D3D12 mismatch there is a real backend divergence rather than a tolerance issue. Run resource work under the Metal validation layer (`MTL_DEBUG_LAYER=1`); placement-heap mode mismatches, bad offsets and non-resident resources all surface there with precise diagnostics, and none of them are visible on D3D12.
+The aliasing tests are the executable spec — `xmake run agfx_tests --filter Alias` runs nine (three scenarios × C/C++/ez). `AliasHeapTransients` is golden-compared, and the golden is byte-identical across backends, so a cross-backend mismatch there is a real backend divergence rather than a tolerance issue. Run resource work under the Metal validation layer (`MTL_DEBUG_LAYER=1`); placement-heap mode mismatches, bad offsets and non-resident resources all surface there with precise diagnostics, and none of them are visible on D3D12. On Linux, `agfxDeviceCreateInfo::enableValidation` enables `VK_LAYER_KHRONOS_validation` when it is installed (the backend logs a warning if it isn't — validation is silently absent then).

@@ -9,7 +9,7 @@ description: ALWAYS use when building or tracing against acceleration structures
 
 AGFX exposes **inline ray tracing** (DXR 1.1 `RayQuery` / `TraceRayInline`) run from **compute** shaders — there is no separate ray-generation/hit/miss pipeline or shader binding table. You build a two-level acceleration structure (one or more **BLAS** = bottom-level, over triangle or AABB geometry; one **TLAS** = top-level, over instances that reference BLAS), then a compute shader reads the TLAS bindlessly and traces rays against it. The reference consumer is the demo's raytraced mirror reflections (`data/shaders/demo/reflections.hlsl` + `src/agfx/agfx_demo/reflections.cpp`, wired in `deferred_renderer.cpp::RenderReflections`) and the scene-side build in `src/agfx/agfx_demo/gltf_scene.cpp`.
 
-On macOS everything maps to Metal 4 acceleration structures (`agfx_metal4.mm`); on Windows to D3D12 DXR. The C API is in `src/agfx/agfx/agfx.h`; RAII C++ wrappers in `agfx.hpp`; a one-call immediate-mode helper in `agfx_ez.hpp`.
+On macOS everything maps to Metal 4 acceleration structures (`agfx_metal4.mm`); on Windows to D3D12 DXR; on Linux to Vulkan's acceleration-structure/ray-query extensions (`agfx_vulkan.cpp`). The C API is in `src/agfx/agfx/agfx.h`; RAII C++ wrappers in `agfx.hpp`; a one-call immediate-mode helper in `agfx_ez.hpp`. Shader-side, the Vulkan backend reaches the TLAS through a dedicated descriptor array rather than `ResourceDescriptorHeap` — `data/shaders/agfx.h` hides this inside `AGFXRaytracingAccelerationStructure`, so tracing code is identical on every backend.
 
 ## Ownership
 

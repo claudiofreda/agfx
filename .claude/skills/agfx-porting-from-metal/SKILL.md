@@ -7,7 +7,7 @@ description: ALWAYS use when porting an existing Metal (Metal 3 or Metal 4) engi
 
 ## Overview
 
-This skill is for porting an existing **Metal-based engine to AGFX** (making it cross-platform, since AGFX also has a D3D12 backend) — the reverse direction from `game-porting-skills`, which ports non-Metal engines *to* raw Metal. If the request is instead "port my D3D12/Vulkan engine to Metal directly, not through AGFX," that's `game-porting-skills`, not this skill.
+This skill is for porting an existing **Metal-based engine to AGFX** (making it cross-platform, since AGFX also has D3D12 and Vulkan backends for Windows and Linux) — the reverse direction from `game-porting-skills`, which ports non-Metal engines *to* raw Metal. If the request is instead "port my D3D12/Vulkan engine to Metal directly, not through AGFX," that's `game-porting-skills`, not this skill.
 
 Metal is, of all AGFX's source APIs, the one whose *backend implementation* AGFX itself is built on for macOS (`agfx/agfx_metal4.mm` uses Metal 4). Porting a Metal engine to AGFX is largely exposing/renaming an already-similar shape: command buffers, encoders-as-passes, explicit resource barriers (if already using Metal 4's explicit barrier API) or `useResource`-style residency (Metal 3), and — if the engine already uses argument buffers with bindless-style indexing — a binding model close to AGFX's own. The main new work is making the engine's Metal-only code paths cross-platform-shaped (AGFX API calls instead of direct `id<MTLDevice>` calls) and, if the source still uses classic per-encoder `setTexture:`/`setBuffer:`/`setSamplerState:` binding rather than argument buffers, rewriting that to bindless.
 
@@ -32,7 +32,7 @@ Metal is, of all AGFX's source APIs, the one whose *backend implementation* AGFX
 
 | Metal | AGFX | Notes |
 |---|---|---|
-| `id<MTLDevice>` (`MTLCreateSystemDefaultDevice`) | `agfxDevice*` | `agfxDeviceCreate`; AGFX also handles D3D12 device creation behind the same call on Windows |
+| `id<MTLDevice>` (`MTLCreateSystemDefaultDevice`) | `agfxDevice*` | `agfxDeviceCreate`; AGFX also handles D3D12 (Windows) and Vulkan (Linux) device creation behind the same call |
 | `id<MTLCommandQueue>` | `agfxCommandQueue*` | `agfxCommandQueueCreate`, typed via `agfxCommandQueueType` |
 | `id<MTLCommandBuffer>` | `agfxCommandBuffer*` | `agfxCommandBufferCreate`/`Begin`/`End`; AGFX command buffers are explicitly reset/reused per frame slot rather than one-shot-and-discard like typical Metal 3 usage — see `agfx-synchronization` for the frame-in-flight pattern |
 | `id<MTLFence>` (Metal 3, intra-queue) / `MTLSharedEvent`/`MTL4Fence`/`MTL4Event` (Metal 4, cross-queue/CPU sync) | `agfxFence*` | AGFX unifies both roles behind one fence object with monotonically increasing values, used the same way for CPU↔GPU (`agfxFenceWait`) and GPU↔GPU (`agfxCommandQueueSignal`/`Wait`) sync — see `agfx-synchronization` |
@@ -51,7 +51,7 @@ Metal is, of all AGFX's source APIs, the one whose *backend implementation* AGFX
 | `id<MTLComputeCommandEncoder>` + `dispatchThreadgroups:threadsPerThreadgroup:` | `agfxComputePass` + `agfxComputePassDispatch` | AGFX's `agfxComputePassDispatch` takes thread**group** counts like Metal's `dispatchThreadgroups:`, not the total-thread-count form of `dispatchThreads:threadsPerThreadgroup:` — check which the source uses and convert accordingly |
 | `MTLRenderPipelineDescriptor`/`newRenderPipelineStateWithDescriptor:` (or `MTL4RenderPipelineDescriptor`/`MTL4Compiler` on Metal 4) | `agfxRenderPipelineCreate` | blend/raster/depth state plus attachment pixel formats folded into one `agfxRenderPipelineCreateInfo`; AGFX has no stencil support — flag stencil-dependent pipelines |
 | `MTLComputePipelineDescriptor`/`newComputePipelineStateWithDescriptor:` | `agfxComputePipelineCreate` | straightforward 1:1; `[numthreads(x,y,z)]` equivalent comes from the HLSL shader itself, not a separate threadgroup-size descriptor field |
-| MSL source (`.metal` files, compiled via `xcrun metal`/`MTLCompileOptions`) | HLSL, compiled via `agfxCompileShader` (DXC → DXIL, translated to Metal IR on macOS by AGFX internally) | source-level rewrite required: AGFX shaders are authored in HLSL, not MSL, even though the macOS backend ultimately still runs on Metal — see `agfx-writing-bindless-shaders`. Resource-access syntax (`[[texture(n)]]`, `[[buffer(n)]]` attributes) has no equivalent; everything routes through `ResourceHandle` |
+| MSL source (`.metal` files, compiled via `xcrun metal`/`MTLCompileOptions`) | HLSL, compiled via `agfxCompileShader` (DXC → DXIL on Windows, Metal IR on macOS, SPIR-V on Linux, all handled by AGFX internally) | source-level rewrite required: AGFX shaders are authored in HLSL, not MSL, even though the macOS backend ultimately still runs on Metal — see `agfx-writing-bindless-shaders`. Resource-access syntax (`[[texture(n)]]`, `[[buffer(n)]]` attributes) has no equivalent; everything routes through `ResourceHandle` |
 | `CAMetalLayer` + `nextDrawable`/`present`/`presentAfterMinimumDuration:` | `agfxSwapChain*` | `agfxSwapChainCreate` takes the `CAMetalLayer*` as its `handle` on macOS; `agfxSwapChainAcquireNextTexture`/`agfxSwapChainPresent` replace `nextDrawable`/`present` — see `agfx-presentation-and-swapchain` |
 | `wantsExtendedDynamicRangeContent`/EDR headroom (HDR) | `agfxSwapChainCreateInfo::isHDR` | destroy+recreate to toggle, same as every other AGFX backend — no in-place reconfiguration, unlike some direct `CAMetalLayer` HDR toggling code might assume — see `agfx-presentation-and-swapchain` |
 
@@ -69,7 +69,7 @@ Because Metal and AGFX's Metal 4 backend already share deep structural similarit
 
 ## Advanced features: mesh shaders, ray tracing, GPU-driven draws
 
-All three are supported as of **AGFX v1.2.0** (ray tracing landed in v1.1.0, multi-draw indirect in v1.2.0). Each is capability-gated — query once and keep the fallback path alive, since none are universal (Apple silicon needs M3+ for ray tracing and mesh shaders):
+All three are supported as of **AGFX v1.2.0** (ray tracing landed in v1.1.0, multi-draw indirect in v1.2.0). Each is capability-gated — query once and keep the fallback path alive, since none are universal (in practice: Apple M3+, NVIDIA RTX 20+, AMD RX 6000+, or Intel Arc):
 
 ```cpp
 agfxDeviceInfo info = {};
@@ -80,7 +80,7 @@ agfxDeviceGetInfo(device, &info);
 | Metal | AGFX | Notes |
 |---|---|---|
 | `drawMeshThreadgroups:threadsPerObjectThreadgroup:threadsPerMeshThreadgroup:` | `agfxRenderPassDrawMesh` | AGFX takes the threadgroup sizes from the pipeline (`meshGroupSizeX/Y/Z`, `taskGroupSizeX/Y/Z`), not the draw call |
-| `MTLAccelerationStructure` + acceleration-structure encoder builds | `agfxAccelerationStructureCreate` + `agfxComputePassBuildAccelerationStructure` | AGFX builds inside a compute pass on both backends |
+| `MTLAccelerationStructure` + acceleration-structure encoder builds | `agfxAccelerationStructureCreate` + `agfxComputePassBuildAccelerationStructure` | AGFX builds inside a compute pass on every backend |
 | `intersection_query` in MSL | `RayQuery` in HLSL | direct equivalent — Metal's inline model is the one AGFX exposes |
 | `MTLIndirectCommandBuffer` + `executeCommandsInBuffer:` + a GPU encoding kernel | `agfxIndirectBundle` + `PrepareIndirectBundle`/`ExecuteIndirectBundle` | **AGFX already owns the ICB and its encoding kernel.** Delete the engine's hand-rolled ICB encoding; write D3D12-shaped commands via the `AGFXIndirectDraw*Bundle` HLSL helpers and let `PrepareIndirectBundle` build the ICB |
 

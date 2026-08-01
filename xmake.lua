@@ -22,10 +22,12 @@ end
 
 -- Compile flags and platform specific packages
 if is_plat("windows") then
-    add_defines("WIN32_LEAN_AND_MEAN", "GAME_WINDOWS", "ENABLE_PIX", "USE_PIX", { public = true })
+    add_defines("WIN32_LEAN_AND_MEAN", "USE_PIX", { public = true })
 elseif is_plat("macosx") then
     add_defines("GAME_MAC", { public = true })
     add_cxxflags("-fobjc-arc", "-x objective-c++", { public = true })
+elseif is_plat("linux") then
+    add_defines("GAME_LINUX", { public = true })
 end
 
 includes("src/agfx")

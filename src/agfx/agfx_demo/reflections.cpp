@@ -10,6 +10,7 @@
 #include <agfx_shader/agfx_shader_compiler.h>
 
 #include <string>
+#include <cstring>
 
 namespace {
 

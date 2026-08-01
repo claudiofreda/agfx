@@ -40,7 +40,7 @@ This is the widest conceptual gap of any of the porting skills — OpenGL's impl
 | `glGenVertexArrays`/`glBindVertexArray`/`glVertexAttribPointer` (VAO) | **deleted — vertex pulling** | there is no vertex-attribute binding at all; vertex shaders take `SV_VertexID` and manually load from an `AGFXStructuredBuffer` — see `agfx-writing-bindless-shaders` |
 | `glGenFramebuffers`/`glBindFramebuffer`/`glFramebufferTexture2D` (FBO) | `agfxRenderTarget*` + `agfxRenderPassBegin` | GL's "bind an FBO, its attachments are already configured" becomes an explicit per-pass render target + attachment list with load/store ops — see `agfx-render-targets-and-passes` |
 | `glClear`/`glClearColor`/`glClearDepth` | `agfxLoadOp` = `AGFX_LOAD_OPERATION_CLEAR` + `clearColor` on the render pass attachment | clearing is declared when starting the pass, not a separate call |
-| `glUseProgram` + separately linked/compiled `.vert`/`.frag` GLSL | `agfxShaderModule*` + `agfxRenderPipelineCreateInfo` | AGFX shaders are HLSL, compiled via `agfxCompileShader` (DXC → DXIL, translated on macOS) — GLSL source needs rewriting to HLSL, not just recompiling; see `agfx-writing-bindless-shaders` |
+| `glUseProgram` + separately linked/compiled `.vert`/`.frag` GLSL | `agfxShaderModule*` + `agfxRenderPipelineCreateInfo` | AGFX shaders are HLSL, compiled via `agfxCompileShader` (DXC → DXIL on Windows, Metal IR on macOS, SPIR-V on Linux) — GLSL source needs rewriting to HLSL, not just recompiling; see `agfx-writing-bindless-shaders` |
 | `uniform sampler2D`/`layout(binding=N) uniform texture...` + `glUniform1i`/`glBindTextureUnit` | **deleted — bindless** | no named uniforms and no texture units; every resource access goes through a `ResourceHandle` passed via push constants — see `agfx-writing-bindless-shaders` |
 | Uniform blocks (`layout(std140) uniform`) + `glBindBufferBase(GL_UNIFORM_BUFFER, ...)` | `ResourceHandle` to a constant buffer, nested in push constants, loaded as `AGFXStructuredBuffer` | no separate uniform-block binding point — see the "scene/per-frame constants" pattern in `agfx-writing-bindless-shaders` |
 | SSBOs (`layout(std430) buffer`) + `glBindBufferBase(GL_SHADER_STORAGE_BUFFER, ...)` | `AGFXStructuredBuffer<T>`/`AGFXRWStructuredBuffer<T>` via `ResourceHandle` | same bindless pattern; read-only vs. read/write picks the wrapper, matching `AGFX_BUFFER_USAGE_SHADER_READ`/`SHADER_WRITE` on the host buffer |
@@ -66,7 +66,7 @@ This is the widest conceptual gap of any of the porting skills — OpenGL's impl
 
 ## Advanced features: mesh shaders, ray tracing, GPU-driven draws
 
-All three are supported as of **AGFX v1.2.0** (ray tracing landed in v1.1.0, multi-draw indirect in v1.2.0). Each is capability-gated — query once and keep the fallback path alive, since none are universal (Apple silicon needs M3+ for ray tracing and mesh shaders):
+All three are supported as of **AGFX v1.2.0** (ray tracing landed in v1.1.0, multi-draw indirect in v1.2.0). Each is capability-gated — query once and keep the fallback path alive, since none are universal (in practice: Apple M3+, NVIDIA RTX 20+, AMD RX 6000+, or Intel Arc):
 
 ```cpp
 agfxDeviceInfo info = {};

@@ -884,9 +884,11 @@ namespace agfx::ez
     {
         agfxDeviceCreateInfo deviceInfo{};
         agfx::Device* existingDevice = nullptr; // if set, Context does not own/destroy this device
-        void* windowHandle = nullptr;           // HWND on Windows, CAMetalLayer* on macOS. If null, the
-                                                // Context is headless: no swap chain is created, and the
-                                                // back buffer / resize / HDR entry points are unavailable.
+        void* windowHandle = nullptr;           // HWND on Windows, CAMetalLayer* on macOS, or a pointer to
+                                                // an agfxLinuxWindowHandle on Linux (which must then outlive
+                                                // the Context). If null, the Context is headless: no swap
+                                                // chain is created, and the back buffer / resize / HDR entry
+                                                // points are unavailable.
         uint32_t width = 0;
         uint32_t height = 0;
         bool vsync = true;

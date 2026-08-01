@@ -770,6 +770,7 @@ agfxCommandQueue* agfxCommandQueueCreate(agfxDevice* device, const agfxCommandQu
 
 void agfxCommandQueueDestroy(agfxDevice* device, agfxCommandQueue* queue) {
     if (queue->d3d12CommandQueue) queue->d3d12CommandQueue->Release();
+    device->createInfo.free(queue);
 }
 
 void agfxCommandQueueSignal(agfxCommandQueue* queue, agfxFence* fence, uint64_t value) {

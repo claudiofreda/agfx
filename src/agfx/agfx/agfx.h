@@ -99,6 +99,27 @@ typedef struct agfxAccelerationStructure agfxAccelerationStructure;
 /// @brief A bundle of indirect commands. Holds a GPU commands buffer and a count buffer, used for GPU driven rendering or compute.
 typedef struct agfxIndirectBundle agfxIndirectBundle;
 
+/// @brief The windowing/display server protocol to create surface-capable instance extensions for.
+///        Only consulted by the Vulkan backend (Linux); the D3D12 and Metal backends ignore it.
+typedef enum agfxDisplayServerProtocol {
+    /// @brief X11 via Xlib. Enables VK_KHR_xlib_surface. Swap chain creation expects a Display*/Window pair.
+    AGFX_DISPLAY_SERVER_PROTOCOL_X11,
+    /// @brief X11 via XCB. Enables VK_KHR_xcb_surface. Swap chain creation expects an xcb_connection_t*/xcb_window_t pair.
+    AGFX_DISPLAY_SERVER_PROTOCOL_XCB,
+    /// @brief Wayland. Enables VK_KHR_wayland_surface. Swap chain creation expects a wl_display*/wl_surface* pair.
+    AGFX_DISPLAY_SERVER_PROTOCOL_WAYLAND,
+} agfxDisplayServerProtocol;
+
+/// @brief The native window handle pair the Vulkan backend consumes on Linux. Point
+///        agfxSwapChainCreateInfo::handle at one of these; how the fields are interpreted is
+///        decided by the agfxDeviceCreateInfo::displayServerProtocol the device was created with.
+typedef struct agfxLinuxWindowHandle {
+    /// @brief Display* (X11), xcb_connection_t* (XCB), or wl_display* (Wayland).
+    void* display;
+    /// @brief The X11 Window or xcb_window_t (zero-extended), or the wl_surface* cast to uint64_t (Wayland).
+    uint64_t window;
+} agfxLinuxWindowHandle;
+
 /// @brief A structure containing information for creating an agfxDevice.
 typedef struct agfxDeviceCreateInfo {
     /// @brief The allocation function to use for device memory allocations.
@@ -113,6 +134,9 @@ typedef struct agfxDeviceCreateInfo {
     agfxBool enableValidation;
     /// @brief Optional log function for reporting warnings and errors from the device and its resources. Leave nullptr to disable logging.
     agfxLogFunction logFunction;
+    /// @brief Which display server protocol to create a Vulkan surface for. Only consulted by the
+    ///        Vulkan backend (Linux); the D3D12 and Metal backends ignore it.
+    agfxDisplayServerProtocol displayServerProtocol;
 } agfxDeviceCreateInfo;
 
 /// @brief Describes the capabilities of an agfxDevice, retrieved via agfxDeviceGetInfo.
@@ -1407,8 +1431,9 @@ typedef struct agfxSwapChainCreateInfo {
     agfxBool isHDR;
     /// @brief Whether to synchronize presentation with the display's refresh rate. Set to 1 to enable, 0 to disable.
     agfxBool vsync;
-    /// @brief The native window/layer handle to present to: an HWND on Windows, or a CAMetalLayer* on macOS.
-    void* handle; // HWND or CAMetalLayer*
+    /// @brief The native window/layer handle to present to: an HWND on Windows, a CAMetalLayer* on
+    ///        macOS, or a pointer to an agfxLinuxWindowHandle on Linux (Vulkan).
+    void* handle; // HWND, CAMetalLayer*, or agfxLinuxWindowHandle*
 } agfxSwapChainCreateInfo;
 
 /// @brief Creates a new agfxSwapChain with the specified creation info.

@@ -36,6 +36,7 @@ struct GBufferIndirectPushConstants {
     uint32_t gpuScene;
     uint32_t textureSampler;
     uint32_t sceneCB;
+    uint32_t drawIndirection;
 };
 
 struct DebugLinesPushConstants {
@@ -361,8 +362,9 @@ void DeferredRenderer::Init(agfxDevice* device, agfxTextureFormat swapchainForma
     gbufferPipelineCullBack = CreateGBufferPipeline(device, AGFX_CULL_MODE_BACK);
     gbufferPipelineCullNone = CreateGBufferPipeline(device, AGFX_CULL_MODE_NONE);
 
-    gbufferIndirectVS = CompileShader(device, gbufferSource, AGFX_SHADER_STAGE_VERTEX, "main_vs_indirect", AGFX_SHADER_MODULE_TYPE_VERTEX);
-    gbufferIndirectPS = CompileShader(device, gbufferSource, AGFX_SHADER_STAGE_FRAGMENT, "main_ps_indirect", AGFX_SHADER_MODULE_TYPE_FRAGMENT);
+    std::string gbufferIndirectSource = ReadFile((std::string(kDataDir) + "shaders/demo/gbuffer_indirect.hlsl").c_str());
+    gbufferIndirectVS = CompileShader(device, gbufferIndirectSource, AGFX_SHADER_STAGE_VERTEX, "main_vs_indirect", AGFX_SHADER_MODULE_TYPE_VERTEX);
+    gbufferIndirectPS = CompileShader(device, gbufferIndirectSource, AGFX_SHADER_STAGE_FRAGMENT, "main_ps_indirect", AGFX_SHADER_MODULE_TYPE_FRAGMENT);
 
     agfxRenderPipelineCreateInfo gbufferIndirectInfo = {};
     gbufferIndirectInfo.name = "GBuffer Indirect Pipeline";
@@ -581,6 +583,8 @@ void DeferredRenderer::Shutdown(agfxDevice* device)
 
     if (gbufferIndirectBundle) agfxIndirectBundleDestroy(device, gbufferIndirectBundle);
     if (indirectCountResetBuffer) agfxBufferDestroy(device, indirectCountResetBuffer);
+    if (drawIndirectionView) agfxBufferViewDestroy(device, drawIndirectionView);
+    if (drawIndirectionBuffer) agfxBufferDestroy(device, drawIndirectionBuffer);
     if (culling) { delete culling; culling = nullptr; }
     if (gbufferIndirectPipeline) agfxRenderPipelineDestroy(device, gbufferIndirectPipeline);
     if (gbufferIndirectVS) agfxShaderModuleDestroy(device, gbufferIndirectVS);
@@ -641,6 +645,8 @@ void DeferredRenderer::SetupIndirectBundle(agfxDevice* device, uint32_t primitiv
 {
     if (gbufferIndirectBundle && indirectPrimitiveCount == primitiveCount) return;
     if (gbufferIndirectBundle) agfxIndirectBundleDestroy(device, gbufferIndirectBundle);
+    if (drawIndirectionView) agfxBufferViewDestroy(device, drawIndirectionView);
+    if (drawIndirectionBuffer) agfxBufferDestroy(device, drawIndirectionBuffer);
 
     agfxIndirectBundleCreateInfo bundleInfo = {};
     bundleInfo.type = AGFX_INDIRECT_BUNDLE_TYPE_DRAW_INDEXED;
@@ -648,6 +654,19 @@ void DeferredRenderer::SetupIndirectBundle(agfxDevice* device, uint32_t primitiv
     bundleInfo.maxCountCount = 1;
     gbufferIndirectBundle = agfxIndirectBundleCreate(device, &bundleInfo);
     indirectPrimitiveCount = primitiveCount;
+
+    agfxBufferCreateInfo indirectionInfo = {};
+    indirectionInfo.size = (uint64_t)primitiveCount * sizeof(uint32_t);
+    indirectionInfo.stride = sizeof(uint32_t);
+    indirectionInfo.usage = (agfxBufferUsage)(AGFX_BUFFER_USAGE_SHADER_READ | AGFX_BUFFER_USAGE_SHADER_WRITE);
+    indirectionInfo.memoryType = AGFX_BUFFER_MEMORY_TYPE_GPU_ONLY;
+    drawIndirectionBuffer = agfxBufferCreate(device, &indirectionInfo);
+
+    agfxBufferViewCreateInfo indirectionViewInfo = {};
+    indirectionViewInfo.buffer = drawIndirectionBuffer;
+    indirectionViewInfo.type = AGFX_BUFFER_VIEW_TYPE_RAW;
+    indirectionViewInfo.writeable = 1;
+    drawIndirectionView = agfxBufferViewCreate(device, &indirectionViewInfo);
 }
 
 void DeferredRenderer::SetupDebugBoundingBoxes(agfxDevice* device, const GltfScene& scene)
@@ -737,13 +756,14 @@ void DeferredRenderer::RenderDebugBoundingBoxes(agfxDevice* device, agfxCommandB
     agfxCommandBufferTextureBarrier(cmdBuffer, hdrTexture, AGFX_RESOURCE_STATE_RENDER_TARGET, AGFX_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 0, 0, true);
 }
 
-static GBufferIndirectPushConstants MakeIndirectPushConstants(const GltfScene& scene, agfxBufferView* sceneCBView)
+static GBufferIndirectPushConstants MakeIndirectPushConstants(const GltfScene& scene, agfxBufferView* sceneCBView, agfxBufferView* drawIndirectionView)
 {
     GBufferIndirectPushConstants pc = {};
     pc.vertexBuffer = (uint32_t)agfxBufferViewGetHandle(scene.vertexBufferView);
     pc.gpuScene = (uint32_t)agfxBufferViewGetHandle(scene.gpuSceneBufferView);
     pc.textureSampler = (uint32_t)agfxSamplerGetHandle(scene.defaultSampler);
     pc.sceneCB = (uint32_t)agfxBufferViewGetHandle(sceneCBView);
+    pc.drawIndirection = (uint32_t)agfxBufferViewGetHandle(drawIndirectionView);
     return pc;
 }
 
@@ -776,6 +796,9 @@ void DeferredRenderer::CullGBuffer(agfxDevice* device, agfxCommandBuffer* cmdBuf
     // writes after those reads before touching anything.
     agfxCommandBufferMemoryBarrier(cmdBuffer, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
     agfxCommandBufferMemoryBarrier(cmdBuffer, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, AGFX_RESOURCE_STATE_COPY_DEST, true);
+    // Same WAR reasoning for the drawID indirection buffer, whose previous-frame reader is the
+    // GBuffer vertex shader rather than the indirect-argument fetch.
+    agfxCommandBufferMemoryBarrier(cmdBuffer, AGFX_RESOURCE_STATE_ALL_SHADER_RESOURCE, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
 
     agfxComputePass* pass = agfxComputePassBegin(cmdBuffer, "GBuffer Culling");
 
@@ -784,7 +807,8 @@ void DeferredRenderer::CullGBuffer(agfxDevice* device, agfxCommandBuffer* cmdBuf
     // appends need it as a UAV, so this has to be a real state transition, not just a UAV barrier.
     agfxCommandBufferMemoryBarrier(cmdBuffer, AGFX_RESOURCE_STATE_COPY_DEST, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, true);
 
-    culling->Cull(pass, scene.gpuSceneBufferView, indirectPrimitiveCount, frustumPlanes, agfxIndirectBundleGetHandle(gbufferIndirectBundle));
+    culling->Cull(pass, scene.gpuSceneBufferView, indirectPrimitiveCount, frustumPlanes,
+                  agfxIndirectBundleGetHandle(gbufferIndirectBundle), (uint32_t)agfxBufferViewGetHandle(drawIndirectionView));
 
     agfxComputePassBufferUAVBarrier(pass, commandsBuffer);
     agfxComputePassBufferUAVBarrier(pass, countBuffer);
@@ -792,7 +816,7 @@ void DeferredRenderer::CullGBuffer(agfxDevice* device, agfxCommandBuffer* cmdBuf
     // Prepare shares agfxIndirectBundleExecuteInfo with Execute because Metal bakes the push
     // constants into each pre-encoded ICB command at build time; leaving them unset here would
     // hand the ICB zeroed bindless handles.
-    GBufferIndirectPushConstants preparePC = MakeIndirectPushConstants(scene, gbufferSceneCBView[frameSlot]);
+    GBufferIndirectPushConstants preparePC = MakeIndirectPushConstants(scene, gbufferSceneCBView[frameSlot], drawIndirectionView);
 
     agfxIndirectBundleExecuteInfo prepareInfo = {};
     prepareInfo.countIndex = 0;
@@ -807,6 +831,9 @@ void DeferredRenderer::CullGBuffer(agfxDevice* device, agfxCommandBuffer* cmdBuf
 
     agfxCommandBufferMemoryBarrier(cmdBuffer, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
     agfxCommandBufferMemoryBarrier(cmdBuffer, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, AGFX_RESOURCE_STATE_INDIRECT_ARGUMENT, true);
+    // The drawID indirection buffer is consumed by the GBuffer vertex shader, which the
+    // indirect-argument scope above doesn't cover.
+    agfxCommandBufferMemoryBarrier(cmdBuffer, AGFX_RESOURCE_STATE_UNORDERED_ACCESS, AGFX_RESOURCE_STATE_ALL_SHADER_RESOURCE, true);
 }
 
 void DeferredRenderer::RenderGBuffer(agfxDevice* device, agfxCommandBuffer* cmdBuffer, const GltfScene& scene, const Camera& camera, uint32_t frameSlot)
@@ -852,7 +879,7 @@ void DeferredRenderer::RenderGBuffer(agfxDevice* device, agfxCommandBuffer* cmdB
     if (gpuDriven) {
         agfxRenderPassSetPipeline(pass, gbufferIndirectPipeline);
 
-        GBufferIndirectPushConstants pc = MakeIndirectPushConstants(scene, gbufferSceneCBView[frameSlot]);
+        GBufferIndirectPushConstants pc = MakeIndirectPushConstants(scene, gbufferSceneCBView[frameSlot], drawIndirectionView);
 
         agfxIndirectBundleExecuteInfo executeInfo = {};
         executeInfo.countIndex = 0;

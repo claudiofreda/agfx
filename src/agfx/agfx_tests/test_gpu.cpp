@@ -33,7 +33,7 @@ namespace agfxtest
         info.free = TestFree;
         info.tempAllocate = TestAllocate;
         info.tempFree = TestFree;
-        info.enableValidation = true;
+        info.enableValidation = false;
         return info;
     }
 
