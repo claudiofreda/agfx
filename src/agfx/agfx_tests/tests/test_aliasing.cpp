@@ -560,7 +560,7 @@ AGFX_TEST_VALIDATION(AliasBufferOverlap, C)
     agfxBufferUnmap(source);
 
     gpu.RecordAndSubmit([&](agfxCommandBuffer* cmd) {
-        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_DEST, 0);
+        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COMMON, AGFX_RESOURCE_STATE_COPY_DEST, 1);
         {
             agfxComputePass* pass = agfxComputePassBegin(cmd, "alias buffer overlap: write A");
             agfxComputePassCopyBufferToBuffer(pass, source, bufferA, 0, 0, kOverlapSize);
@@ -568,7 +568,7 @@ AGFX_TEST_VALIDATION(AliasBufferOverlap, C)
         }
         // The alias edge: A's write must be ordered before B's read of the same memory. Different
         // handles, same bytes -- the usage tracker sees no relationship between them at all.
-        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COPY_DEST, AGFX_RESOURCE_STATE_COPY_SOURCE, 0);
+        agfxCommandBufferMemoryBarrier(cmd, AGFX_RESOURCE_STATE_COPY_DEST, AGFX_RESOURCE_STATE_COPY_SOURCE, 1);
         {
             agfxComputePass* pass = agfxComputePassBegin(cmd, "alias buffer overlap: read B");
             agfxComputePassCopyBufferToBuffer(pass, bufferB, readback, 0, 0, kOverlapSize);
@@ -642,12 +642,12 @@ AGFX_TEST_VALIDATION(AliasBufferOverlap, Cpp)
     }
 
     cmd.Begin();
-    cmd.MemoryBarrier(agfx::ResourceState::Common, agfx::ResourceState::CopyDest, false);
+    cmd.MemoryBarrier(agfx::ResourceState::Common, agfx::ResourceState::CopyDest, true);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("alias buffer overlap: write A");
         pass.CopyBufferToBuffer(source, bufferA, 0, 0, kOverlapSize);
     }
-    cmd.MemoryBarrier(agfx::ResourceState::CopyDest, agfx::ResourceState::CopySource, false);
+    cmd.MemoryBarrier(agfx::ResourceState::CopyDest, agfx::ResourceState::CopySource, true);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("alias buffer overlap: read B");
         pass.CopyBufferToBuffer(bufferB, readback, 0, 0, kOverlapSize);
