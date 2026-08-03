@@ -777,6 +777,11 @@ struct agfxDevice {
 
     id<MTLLibrary> internalLibrary;
     id<MTLComputePipelineState> icbConvertPipelines[4]; // indexed by agfxIndirectBundleType
+
+    // Live queues, tracked so agfxDeviceWaitIdle can drain each one (Metal has no device-wide wait).
+    // __unsafe_unretained: the agfxCommandQueue owns the reference; entries are removed on queue destroy.
+    __unsafe_unretained id<MTL4CommandQueue> liveQueues[16];
+    uint32_t liveQueueCount;
 };
 
 static void agfxLog(agfxDevice* device, agfxLogSeverity severity, const char* fmt, ...) {
@@ -794,6 +799,7 @@ static void agfxLog(agfxDevice* device, agfxLogSeverity severity, const char* fm
 agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
     agfxDevice* device = (agfxDevice*)createInfo->allocate(sizeof(agfxDevice));
     memcpy(&device->createInfo, createInfo, sizeof(agfxDeviceCreateInfo));
+    device->liveQueueCount = 0; // The allocator hands back raw memory; default member initializers do not run.
     device->device = MTLCreateSystemDefaultDevice();
     if (!device->device) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxDeviceCreate: MTLCreateSystemDefaultDevice returned nil, no Metal-capable GPU found");
@@ -875,6 +881,21 @@ void agfxDeviceGetInfo(agfxDevice* device, agfxDeviceInfo* info) {
 
 void agfxDeviceMakeResourcesResident(agfxDevice* device) {
     [device->residencySet commit];
+}
+
+void agfxDeviceWaitIdle(agfxDevice* device) {
+    id<MTLSharedEvent> event = [device->device newSharedEvent];
+    if (!event) {
+        agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxDeviceWaitIdle: newSharedEvent failed");
+        return;
+    }
+
+    uint64_t value = 0;
+    for (uint32_t i = 0; i < device->liveQueueCount; ++i) {
+        ++value;
+        [device->liveQueues[i] signalEvent:event value:value];
+        [event waitUntilSignaledValue:value timeoutMS:UINT64_MAX];
+    }
 }
 
 // Fence
@@ -968,10 +989,22 @@ agfxCommandQueue* agfxCommandQueueCreate(agfxDevice* device, const agfxCommandQu
         return nullptr;
     }
     [queue->commandQueue addResidencySet:device->residencySet];
+
+    if (device->liveQueueCount < sizeof(device->liveQueues) / sizeof(device->liveQueues[0])) {
+        device->liveQueues[device->liveQueueCount++] = queue->commandQueue;
+    } else {
+        agfxLog(device, AGFX_LOG_SEVERITY_WARNING, "agfxCommandQueueCreate: live queue tracking is full, agfxDeviceWaitIdle will not cover this queue");
+    }
     return queue;
 }
 
 void agfxCommandQueueDestroy(agfxDevice* device, agfxCommandQueue* queue) {
+    for (uint32_t i = 0; i < device->liveQueueCount; ++i) {
+        if (device->liveQueues[i] == queue->commandQueue) {
+            device->liveQueues[i] = device->liveQueues[--device->liveQueueCount];
+            break;
+        }
+    }
     queue->commandQueue = nil;
     device->createInfo.free(queue);
 }
@@ -1258,8 +1291,8 @@ void agfxComputePassCopyTextureToBuffer(agfxComputePass* computePass, agfxTextur
     [computePass->encoder copyFromTexture:texture->texture sourceSlice:layer sourceLevel:mipLevel sourceOrigin:agfxTextureRegionToMTL(region).origin sourceSize:agfxTextureRegionToMTL(region).size toBuffer:buffer->buffer destinationOffset:bufferOffset destinationBytesPerRow:bytesPerRow destinationBytesPerImage:bytesPerImage];
 }
 
-void agfxComputePassCopyBufferToTexture(agfxComputePass* computePass, agfxBuffer* buffer, agfxTexture* texture, const agfxTextureRegion* region, uint32_t mipLevel, uint32_t layer, uint32_t bytesPerRow, uint32_t bytesPerImage) {
-    [computePass->encoder copyFromBuffer:buffer->buffer sourceOffset:0 sourceBytesPerRow:bytesPerRow sourceBytesPerImage:bytesPerImage sourceSize:agfxTextureRegionToMTL(region).size toTexture:texture->texture destinationSlice:layer destinationLevel:mipLevel destinationOrigin:agfxTextureRegionToMTL(region).origin];
+void agfxComputePassCopyBufferToTexture(agfxComputePass* computePass, agfxBuffer* buffer, uint64_t sourceOffset, agfxTexture* texture, const agfxTextureRegion* region, uint32_t mipLevel, uint32_t layer, uint32_t bytesPerRow, uint32_t bytesPerImage) {
+    [computePass->encoder copyFromBuffer:buffer->buffer sourceOffset:sourceOffset sourceBytesPerRow:bytesPerRow sourceBytesPerImage:bytesPerImage sourceSize:agfxTextureRegionToMTL(region).size toTexture:texture->texture destinationSlice:layer destinationLevel:mipLevel destinationOrigin:agfxTextureRegionToMTL(region).origin];
 }
 
 void agfxComputePassCopyBufferToBuffer(agfxComputePass* computePass, agfxBuffer* srcBuffer, agfxBuffer* dstBuffer, uint64_t srcOffset, uint64_t dstOffset, uint64_t size) {
@@ -1459,7 +1492,9 @@ agfxTextureView* agfxTextureViewCreate(agfxDevice* device, const agfxTextureView
 
     MTLTextureViewDescriptor* descriptor = [MTLTextureViewDescriptor new];
     descriptor.textureType = agfxTextureTypeToMTL(createInfo->type);
-    descriptor.pixelFormat = agfxPixelFormatToMTL(createInfo->format);
+    descriptor.pixelFormat = agfxPixelFormatToMTL(createInfo->format == AGFX_TEXTURE_FORMAT_UNKNOWN
+                                                      ? createInfo->texture->createInfo.format
+                                                      : createInfo->format);
     descriptor.levelRange = NSMakeRange(createInfo->baseMipLevel, createInfo->mipLevelCount);
     descriptor.sliceRange = NSMakeRange(createInfo->baseArrayLayer, createInfo->arrayLayerCount);
 

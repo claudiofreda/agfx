@@ -1017,9 +1017,9 @@ namespace agfx
             agfxComputePassCopyTextureToBuffer(mPass, texture, buffer, bufferOffset, &region, mipLevel, layer, bytesPerRow, bytesPerImage);
         }
 
-        void CopyBufferToTexture(Buffer& buffer, Texture& texture, const agfxTextureRegion& region, uint32_t mipLevel, uint32_t layer, uint32_t bytesPerRow, uint32_t bytesPerImage)
+        void CopyBufferToTexture(Buffer& buffer, uint64_t sourceOffset, Texture& texture, const agfxTextureRegion& region, uint32_t mipLevel, uint32_t layer, uint32_t bytesPerRow, uint32_t bytesPerImage)
         {
-            agfxComputePassCopyBufferToTexture(mPass, buffer, texture, &region, mipLevel, layer, bytesPerRow, bytesPerImage);
+            agfxComputePassCopyBufferToTexture(mPass, buffer, sourceOffset, texture, &region, mipLevel, layer, bytesPerRow, bytesPerImage);
         }
 
         void CopyBufferToBuffer(Buffer& src, Buffer& dst, uint64_t srcOffset, uint64_t dstOffset, uint64_t size)
@@ -1287,6 +1287,8 @@ namespace agfx
         }
 
         void MakeResourcesResident() { agfxDeviceMakeResourcesResident(mDevice); }
+
+        void WaitIdle() { agfxDeviceWaitIdle(mDevice); }
 
         Fence CreateFence() { return Fence(mDevice, agfxFenceCreate(mDevice)); }
 

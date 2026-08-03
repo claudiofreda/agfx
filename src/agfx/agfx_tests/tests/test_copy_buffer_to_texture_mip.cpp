@@ -134,7 +134,7 @@ AGFX_TEST_TEXTURE(CopyBufferToTextureMip, C, kMipWidth, kMipHeight)
 
         const agfxTextureRegion region = MipRegion();
         agfxComputePass* pass = agfxComputePassBegin(cmd, "copy buffer to texture mip");
-        agfxComputePassCopyBufferToTexture(pass, source, dest, &region, kCopyMip, 0, kMipRowBytes,
+        agfxComputePassCopyBufferToTexture(pass, source, 0, dest, &region, kCopyMip, 0, kMipRowBytes,
                                            (uint32_t)kMipBytes);
         agfxComputePassEnd(pass);
     });
@@ -193,7 +193,7 @@ AGFX_TEST_TEXTURE(CopyBufferToTextureMip, Cpp, kMipWidth, kMipHeight)
                        AGFX_SUBRESOURCE_ALL_LAYERS, false);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("copy buffer to texture mip");
-        pass.CopyBufferToTexture(source, dest, MipRegion(), kCopyMip, 0, kMipRowBytes,
+        pass.CopyBufferToTexture(source, 0, dest, MipRegion(), kCopyMip, 0, kMipRowBytes,
                                  (uint32_t)kMipBytes);
     }
     cmd.End();
@@ -245,7 +245,7 @@ AGFX_TEST_TEXTURE(CopyBufferToTextureMip, Ez, kMipWidth, kMipHeight)
         agfx::ez::Frame frame = context.BeginFrame();
         context.TransitionBuffer(source, AGFX_RESOURCE_STATE_COPY_SOURCE);
         context.TransitionTexture(dest, AGFX_RESOURCE_STATE_COPY_DEST, kCopyMip, 0);
-        context.CopyBufferToTexture(source, dest, MipRegion(), kCopyMip, 0, kMipRowBytes, (uint32_t)kMipBytes);
+        context.CopyBufferToTexture(source, 0, dest, MipRegion(), kCopyMip, 0, kMipRowBytes, (uint32_t)kMipBytes);
     }
     context.DrainGPU();
 

@@ -101,7 +101,7 @@ static void ImGui_ImplAGFX_UploadTexture(ImGui_ImplAGFX_Uploader* uploader, agfx
 
     if (!uploader->ActivePass)
         uploader->ActivePass = agfxComputePassBegin(uploader->CmdBuffer, "ImGui Texture Upload");
-    agfxComputePassCopyBufferToTexture(uploader->ActivePass, staging, dstTexture, region, 0, 0, bytesPerRow, bytesPerImage);
+    agfxComputePassCopyBufferToTexture(uploader->ActivePass, staging, 0, dstTexture, region, 0, 0, bytesPerRow, bytesPerImage);
 
     uploader->PendingStagingBuffers.push_back(staging);
 }

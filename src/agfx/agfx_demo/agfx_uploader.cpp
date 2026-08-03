@@ -71,7 +71,7 @@ void AgfxUploader::UploadTexture(agfxDevice* device, agfxTexture* dstTexture, co
     agfxBufferUnmap(staging);
 
     EnsurePass();
-    agfxComputePassCopyBufferToTexture(activePass, staging, dstTexture, region, mipLevel, layer, bytesPerRow, bytesPerImage);
+    agfxComputePassCopyBufferToTexture(activePass, staging, 0, dstTexture, region, mipLevel, layer, bytesPerRow, bytesPerImage);
 
     pendingStagingBuffers.push_back(staging);
 }

@@ -282,7 +282,7 @@ namespace agfxtest
             agfxCommandBufferTextureBarrier(cmd, texture, currentState, AGFX_RESOURCE_STATE_COPY_DEST,
                                             mipLevel, layer, 0);
             agfxComputePass* pass = agfxComputePassBegin(cmd, "upload texture");
-            agfxComputePassCopyBufferToTexture(pass, staging, texture, &region, mipLevel, layer,
+            agfxComputePassCopyBufferToTexture(pass, staging, 0, texture, &region, mipLevel, layer,
                                                bytesPerRow, (uint32_t)byteSize);
             agfxComputePassEnd(pass);
             agfxCommandBufferTextureBarrier(cmd, texture, AGFX_RESOURCE_STATE_COPY_DEST, currentState,

@@ -158,9 +158,9 @@ AGFX_TEST_TEXTURE(CopyBufferToTexture, C, kWidth, kHeight)
         const agfxTextureRegion patchRegion = PatchRegion();
 
         agfxComputePass* pass = agfxComputePassBegin(cmd, "copy buffer to texture");
-        agfxComputePassCopyBufferToTexture(pass, baseBuffer, target, &full, 0, 0, kRowBytes,
+        agfxComputePassCopyBufferToTexture(pass, baseBuffer, 0, target, &full, 0, 0, kRowBytes,
                                            (uint32_t)kImageBytes);
-        agfxComputePassCopyBufferToTexture(pass, patchBuffer, target, &patchRegion, 0, 0, kRegionRowBytes,
+        agfxComputePassCopyBufferToTexture(pass, patchBuffer, 0, target, &patchRegion, 0, 0, kRegionRowBytes,
                                            (uint32_t)kRegionBytes);
         agfxComputePassEnd(pass);
     });
@@ -213,8 +213,8 @@ AGFX_TEST_TEXTURE(CopyBufferToTexture, Cpp, kWidth, kHeight)
                        AGFX_SUBRESOURCE_ALL_MIPS, AGFX_SUBRESOURCE_ALL_LAYERS, false);
     {
         agfx::ComputePass pass = cmd.BeginComputePass("copy buffer to texture");
-        pass.CopyBufferToTexture(baseBuffer, target, FullRegion(), 0, 0, kRowBytes, (uint32_t)kImageBytes);
-        pass.CopyBufferToTexture(patchBuffer, target, PatchRegion(), 0, 0, kRegionRowBytes,
+        pass.CopyBufferToTexture(baseBuffer, 0, target, FullRegion(), 0, 0, kRowBytes, (uint32_t)kImageBytes);
+        pass.CopyBufferToTexture(patchBuffer, 0, target, PatchRegion(), 0, 0, kRegionRowBytes,
                                  (uint32_t)kRegionBytes);
     }
     cmd.End();
@@ -262,7 +262,7 @@ AGFX_TEST_TEXTURE(CopyBufferToTexture, Ez, kWidth, kHeight)
         context.TransitionTexture(target, AGFX_RESOURCE_STATE_COPY_DEST);
 
         agfx::ComputePass pass = context.GetCurrentCommandBuffer().BeginComputePass("copy buffer to texture");
-        pass.CopyBufferToTexture(patchBuffer.Raw(), target.Raw(), PatchRegion(), 0, 0, kRegionRowBytes,
+        pass.CopyBufferToTexture(patchBuffer.Raw(), 0, target.Raw(), PatchRegion(), 0, 0, kRegionRowBytes,
                                  (uint32_t)kRegionBytes);
     }
     context.DrainGPU();
