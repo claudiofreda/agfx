@@ -44,8 +44,8 @@ namespace
         return contents;
     }
 
-    void* Allocate(uint64_t size) { return malloc(size); }
-    void Deallocate(void* ptr) { free(ptr); }
+    void* Allocate(uint64_t size, void* userData) { (void)userData; return malloc(size); }
+    void Deallocate(void* ptr, void* userData) { (void)userData; free(ptr); }
 
     agfx::ShaderModule CompileShader(agfx::Device& device, const std::string& source, agfxShaderStage stage,
                                       const char* entryPoint, agfxShaderModuleType moduleType)

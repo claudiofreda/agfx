@@ -174,7 +174,7 @@ struct agfxDevice {
 template<typename T>
 static T* AgfxAlloc(agfxDevice* device)
 {
-    T* object = (T*)device->createInfo.allocate(sizeof(T));
+    T* object = (T*)device->createInfo.allocate(sizeof(T), device->createInfo.userData);
     new (object) T();
     return object;
 }
@@ -185,7 +185,7 @@ static void AgfxFree(agfxDevice* device, T* object)
     if (!object)
         return;
     object->~T();
-    device->createInfo.free(object);
+    device->createInfo.free(object, device->createInfo.userData);
 }
 
 static void agfxLog(agfxDevice* device, agfxLogSeverity severity, const char* fmt, ...) {
@@ -335,13 +335,13 @@ static agfxDevice* agfxVkDeviceCreateFail(agfxDevice* device, const agfxDeviceCr
     if (device->debugMessenger) vkDestroyDebugUtilsMessengerEXT(device->instance, device->debugMessenger, nullptr);
     if (device->instance) vkDestroyInstance(device->instance, nullptr);
     device->~agfxDevice();
-    createInfo->free(device);
+    createInfo->free(device, createInfo->userData);
     return nullptr;
 }
 
 agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo)
 {
-    agfxDevice* device = (agfxDevice*)createInfo->allocate(sizeof(agfxDevice));
+    agfxDevice* device = (agfxDevice*)createInfo->allocate(sizeof(agfxDevice), createInfo->userData);
     new (device) agfxDevice();
     memcpy(&device->createInfo, createInfo, sizeof(*createInfo));
 
@@ -477,16 +477,23 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo)
         selectedDeviceExtensions = extensions;
         rayTracingSupported = agfxVkHasExtension(extensions, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) &&
                                agfxVkHasExtension(extensions, VK_KHR_RAY_QUERY_EXTENSION_NAME) &&
+                               agfxVkHasExtension(extensions, VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME) &&
                                agfxVkHasExtension(extensions, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
         if (rayTracingSupported) {
             // Binding 2 of the global set is UPDATE_AFTER_BIND, so extension presence alone isn't
             // enough -- the optional UAB feature must be there too or the binding flag is invalid.
+            // rayTracingPipeline is required as well: the AGFX_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE
+            // barrier mapping uses VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, which is only
+            // valid with that feature enabled.
+            VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR };
             VkPhysicalDeviceAccelerationStructureFeaturesKHR accelFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
+            accelFeatures.pNext = &rtPipelineFeatures;
             VkPhysicalDeviceFeatures2 accelQuery = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
             accelQuery.pNext = &accelFeatures;
             vkGetPhysicalDeviceFeatures2(candidate, &accelQuery);
             rayTracingSupported = accelFeatures.accelerationStructure &&
-                                  accelFeatures.descriptorBindingAccelerationStructureUpdateAfterBind;
+                                  accelFeatures.descriptorBindingAccelerationStructureUpdateAfterBind &&
+                                  rtPipelineFeatures.rayTracingPipeline;
         }
         meshShadersSupported = agfxVkHasExtension(extensions, VK_EXT_MESH_SHADER_EXTENSION_NAME);
         return true;
@@ -527,8 +534,11 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo)
     // Enabling the RT/mesh extensions alone isn't enough -- their feature structs must also be
     // chained into vkCreateDevice or every vkCreateAccelerationStructureKHR/mesh pipeline use is
     // invalid, however tolerant a given driver happens to be.
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR enabledRtPipelineFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR };
+    enabledRtPipelineFeatures.rayTracingPipeline = VK_TRUE;
     VkPhysicalDeviceRayQueryFeaturesKHR enabledRayQueryFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR };
     enabledRayQueryFeatures.rayQuery = VK_TRUE;
+    enabledRayQueryFeatures.pNext = &enabledRtPipelineFeatures;
     VkPhysicalDeviceAccelerationStructureFeaturesKHR enabledAccelFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
     enabledAccelFeatures.accelerationStructure = VK_TRUE;
     enabledAccelFeatures.descriptorBindingAccelerationStructureUpdateAfterBind = VK_TRUE;
@@ -551,6 +561,7 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo)
     enabledFeatures13.pNext = &enabledMutableFeatures;
     enabledFeatures13.dynamicRendering = VK_TRUE;
     enabledFeatures13.synchronization2 = VK_TRUE;
+    enabledFeatures13.shaderDemoteToHelperInvocation = VK_TRUE;
     VkPhysicalDeviceVulkan12Features enabledFeatures12 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
     enabledFeatures12.pNext = &enabledFeatures13;
     enabledFeatures12.descriptorIndexing = VK_TRUE;
@@ -562,6 +573,9 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo)
     enabledFeatures12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
     enabledFeatures12.bufferDeviceAddress = VK_TRUE;
     enabledFeatures12.timelineSemaphore = VK_TRUE;
+    // The shader compiler emits scalar-layout SPIR-V (-fvk-use-scalar-layout), so structured
+    // buffer strides and push constant members are packed tighter than std430 allows.
+    enabledFeatures12.scalarBlockLayout = VK_TRUE;
     enabledFeatures12.drawIndirectCount = device->supportsMultiDrawIndirect ? VK_TRUE : VK_FALSE;
     VkPhysicalDeviceVulkan11Features enabledFeatures11 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
     enabledFeatures11.pNext = &enabledFeatures12;
@@ -574,6 +588,7 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo)
         deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+        deviceExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
     }
     if (device->supportsMeshShaders) {
         deviceExtensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
@@ -1369,9 +1384,9 @@ static uint8_t* agfxVkGetPipelineCacheData(agfxDevice* device, VkPipelineCache c
         return nullptr;
     }
 
-    uint8_t* data = (uint8_t*)device->createInfo.allocate(size);
+    uint8_t* data = (uint8_t*)device->createInfo.allocate(size, device->createInfo.userData);
     if (vkGetPipelineCacheData(device->device, cache, &size, data) != VK_SUCCESS) {
-        device->createInfo.free(data);
+        device->createInfo.free(data, device->createInfo.userData);
         return nullptr;
     }
 
@@ -1621,6 +1636,9 @@ struct agfxAccelerationStructure {
     std::vector<uint32_t> primitiveCounts;
     VkAccelerationStructureBuildSizesInfoKHR buildSizes = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR };
     VkAccelerationStructureKHR vkAccelerationStructure = VK_NULL_HANDLE;
+    // Cached at create: querying it per TLAS instance per frame is a driver call hot enough to show
+    // up on the CPU profile.
+    VkDeviceAddress deviceAddress = 0;
     // Backing storage the VkAccelerationStructureKHR lives in.
     VkBuffer storageBuffer = VK_NULL_HANDLE;
     VkDeviceMemory storageMemory = VK_NULL_HANDLE;
@@ -1767,6 +1785,10 @@ static bool agfxVkFinalizeAccelerationStructure(agfxDevice* device, agfxAccelera
         return false;
     }
 
+    VkAccelerationStructureDeviceAddressInfoKHR deviceAddressInfo = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR };
+    deviceAddressInfo.accelerationStructure = accelerationStructure->vkAccelerationStructure;
+    accelerationStructure->deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(device->device, &deviceAddressInfo);
+
     // Only a TLAS is traced from shaders (__rt_as_array, set 0 binding 2), matching D3D12 where
     // only the TLAS gets an SRV.
     if (accelerationStructure->createInfo.type == AGFX_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL) {
@@ -1886,17 +1908,12 @@ void agfxAccelerationStructureAddInstances(agfxAccelerationStructure* accelerati
     for (uint32_t i = 0; i < instanceCount; ++i) {
         const agfxAccelerationStructureInstance* instance = &instances[i];
         VkAccelerationStructureInstanceKHR& vkInstance = accelerationStructure->mappedInstances[accelerationStructure->currentInstanceCount + i];
-        // Both sides are row-major 3x4, so this is a straight copy (unlike Metal's packed
-        // column-major type, which needs a transpose).
         memcpy(&vkInstance.transform, instance->transform, sizeof(float) * 12);
         vkInstance.instanceCustomIndex = instance->userID; // What CommittedInstanceID() returns.
         vkInstance.mask = 0xFF;
         vkInstance.instanceShaderBindingTableRecordOffset = 0;
         vkInstance.flags = instance->opaque ? VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR : VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
-
-        VkAccelerationStructureDeviceAddressInfoKHR addressInfo = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR };
-        addressInfo.accelerationStructure = instance->blas->vkAccelerationStructure;
-        vkInstance.accelerationStructureReference = vkGetAccelerationStructureDeviceAddressKHR(accelerationStructure->device->device, &addressInfo);
+        vkInstance.accelerationStructureReference = instance->blas->deviceAddress;
     }
     accelerationStructure->currentInstanceCount += instanceCount;
 }

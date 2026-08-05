@@ -13,8 +13,8 @@ namespace agfxtest
 {
     namespace
     {
-        void* TestAllocate(uint64_t size) { return malloc((size_t)size); }
-        void TestFree(void* ptr) { free(ptr); }
+        void* TestAllocate(uint64_t size, void* userData) { (void)userData; return malloc((size_t)size); }
+        void TestFree(void* ptr, void* userData) { (void)userData; free(ptr); }
 
         uint32_t BytesPerPixel(agfxTextureFormat format)
         {

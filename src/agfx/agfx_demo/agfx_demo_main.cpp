@@ -20,13 +20,15 @@
 #include "gpu_profiler.h"
 #include "demo_file_utils.h"
 
-static void* agfxAlloc(uint64_t size)
+static void* agfxAlloc(uint64_t size, void* userData)
 {
+    (void)userData;
     return malloc(size);
 }
 
-static void agfxDealloc(void* ptr)
+static void agfxDealloc(void* ptr, void* userData)
 {
+    (void)userData;
     free(ptr);
 }
 

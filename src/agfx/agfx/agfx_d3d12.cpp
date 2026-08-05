@@ -22,7 +22,7 @@
 #define AGFX_NATIVE_NO_INCLUDES
 #include "agfx_native.h"
 
-#ifdef ENABLE_PIX
+#ifdef USE_PIX
     #include "WinPixEventRuntime/pix3.h"
 #endif
 
@@ -310,6 +310,7 @@ struct agfxDescriptorManager {
 struct agfxAccelerationStructure {
     agfxAccelerationStructureCreateInfo createInfo;
     ID3D12Resource* d3d12Resource = nullptr;
+    D3D12_GPU_VIRTUAL_ADDRESS gpuVirtualAddress = 0;
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuildInfo = {};
     agfxDescriptorAllocation descriptor = { {0}, {0}, UINT64_MAX }; // Bindless SRV slot, top level only
 
@@ -372,7 +373,7 @@ static void agfxLog(agfxDevice* device, agfxLogSeverity severity, const char* fm
 }
 
 agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
-    agfxDevice* device = (agfxDevice*)createInfo->allocate(sizeof(agfxDevice));
+    agfxDevice* device = (agfxDevice*)createInfo->allocate(sizeof(agfxDevice), createInfo->userData);
     memset(device, 0, sizeof(agfxDevice));
     memcpy(&device->createInfo, createInfo, sizeof(agfxDeviceCreateInfo));
 
@@ -388,7 +389,7 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
 
     if (FAILED(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&device->dxgiFactory)))) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxDeviceCreate: CreateDXGIFactory2 failed");
-        createInfo->free(device);
+        createInfo->free(device, createInfo->userData);
         return NULL;
     }
 
@@ -410,7 +411,7 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
     if (!adapter1) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxDeviceCreate: no suitable D3D12 adapter found");
         device->dxgiFactory->Release();
-        createInfo->free(device);
+        createInfo->free(device, createInfo->userData);
         return NULL;
     }
 
@@ -421,7 +422,7 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxDeviceCreate: D3D12CreateDevice failed");
         device->dxgiAdapter->Release();
         device->dxgiFactory->Release();
-        createInfo->free(device);
+        createInfo->free(device, createInfo->userData);
         return NULL;
     }
 
@@ -434,7 +435,7 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
         device->d3d12Device->Release();
         device->dxgiAdapter->Release();
         device->dxgiFactory->Release();
-        createInfo->free(device);
+        createInfo->free(device, createInfo->userData);
         return NULL;
     }
 
@@ -479,7 +480,7 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
         }
     }
 
-    void* descriptorManagerMemory = createInfo->allocate(sizeof(agfxDescriptorManager));
+    void* descriptorManagerMemory = createInfo->allocate(sizeof(agfxDescriptorManager), createInfo->userData);
     device->descriptorManager = new (descriptorManagerMemory) agfxDescriptorManager(device->d3d12Device);
 
     D3D12_ROOT_PARAMETER rootParameters[2] = {};
@@ -505,11 +506,11 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
         if (signatureBlob) signatureBlob->Release();
         if (errorBlob) errorBlob->Release();
         device->descriptorManager->~agfxDescriptorManager();
-        device->createInfo.free(device->descriptorManager);
+        device->createInfo.free(device->descriptorManager, device->createInfo.userData);
         device->d3d12Device->Release();
         device->dxgiAdapter->Release();
         device->dxgiFactory->Release();
-        createInfo->free(device);
+        createInfo->free(device, createInfo->userData);
         return NULL;
     }
     if (FAILED(device->d3d12Device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&device->globalRootSignature)))) {
@@ -517,11 +518,11 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
         signatureBlob->Release();
         if (errorBlob) errorBlob->Release();
         device->descriptorManager->~agfxDescriptorManager();
-        device->createInfo.free(device->descriptorManager);
+        device->createInfo.free(device->descriptorManager, device->createInfo.userData);
         device->d3d12Device->Release();
         device->dxgiAdapter->Release();
         device->dxgiFactory->Release();
-        createInfo->free(device);
+        createInfo->free(device, createInfo->userData);
         return NULL;
     }
     signatureBlob->Release();
@@ -576,7 +577,7 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
 void agfxDeviceDestroy(agfxDevice* device) {
     if (device->descriptorManager) {
         device->descriptorManager->~agfxDescriptorManager();
-        device->createInfo.free(device->descriptorManager);
+        device->createInfo.free(device->descriptorManager, device->createInfo.userData);
     }
     for (uint32_t i = 0; i < 4; ++i) {
         if (device->indirectSignatures[i]) device->indirectSignatures[i]->Release();
@@ -588,7 +589,7 @@ void agfxDeviceDestroy(agfxDevice* device) {
     if (device->dxgiAdapter) device->dxgiAdapter->Release();
     if (device->dxgiFactory) device->dxgiFactory->Release();
     if (device->d3d12Device) device->d3d12Device->Release();
-    device->createInfo.free(device);
+    device->createInfo.free(device, device->createInfo.userData);
 }
 
 void agfxDeviceGetInfo(agfxDevice* device, agfxDeviceInfo* info) {
@@ -666,10 +667,10 @@ struct agfxFence {
 };
 
 agfxFence* agfxFenceCreate(agfxDevice* device) {
-    agfxFence* fence = (agfxFence*)device->createInfo.allocate(sizeof(agfxFence));
+    agfxFence* fence = (agfxFence*)device->createInfo.allocate(sizeof(agfxFence), device->createInfo.userData);
     if (FAILED(device->d3d12Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence->d3d12Fence)))) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxFenceCreate: CreateFence failed");
-        device->createInfo.free(fence);
+        device->createInfo.free(fence, device->createInfo.userData);
         return NULL;
     }
     fence->fenceEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -680,7 +681,7 @@ agfxFence* agfxFenceCreate(agfxDevice* device) {
 void agfxFenceDestroy(agfxDevice* device, agfxFence* fence) {
     if (fence->d3d12Fence) fence->d3d12Fence->Release();
     if (fence->fenceEvent) CloseHandle(fence->fenceEvent);
-    device->createInfo.free(fence);
+    device->createInfo.free(fence, device->createInfo.userData);
 }
 
 void agfxFenceWait(agfxFence* fence, uint64_t value, uint64_t timeout) {
@@ -712,10 +713,10 @@ agfxQueryPool* agfxQueryPoolCreate(agfxDevice* device, agfxCommandQueue* queue, 
     queryHeapDesc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
     queryHeapDesc.Count = createInfo->count;
 
-    agfxQueryPool* pool = (agfxQueryPool*)device->createInfo.allocate(sizeof(agfxQueryPool));
+    agfxQueryPool* pool = (agfxQueryPool*)device->createInfo.allocate(sizeof(agfxQueryPool), device->createInfo.userData);
     if (FAILED(device->d3d12Device->CreateQueryHeap(&queryHeapDesc, IID_PPV_ARGS(&pool->d3d12QueryHeap)))) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxQueryPoolCreate: CreateQueryHeap failed");
-        device->createInfo.free(pool);
+        device->createInfo.free(pool, device->createInfo.userData);
         return NULL;
     }
 
@@ -742,7 +743,7 @@ agfxQueryPool* agfxQueryPoolCreate(agfxDevice* device, agfxCommandQueue* queue, 
         IID_PPV_ARGS(&pool->d3d12ReadbackBuffer)))) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxQueryPoolCreate: CreateCommittedResource for readback buffer failed");
         pool->d3d12QueryHeap->Release();
-        device->createInfo.free(pool);
+        device->createInfo.free(pool, device->createInfo.userData);
         return NULL;
     }
 
@@ -750,7 +751,7 @@ agfxQueryPool* agfxQueryPoolCreate(agfxDevice* device, agfxCommandQueue* queue, 
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxQueryPoolCreate: GetTimestampFrequency failed");
         pool->d3d12ReadbackBuffer->Release();
         pool->d3d12QueryHeap->Release();
-        device->createInfo.free(pool);
+        device->createInfo.free(pool, device->createInfo.userData);
         return NULL;
     }
     pool->count = createInfo->count;
@@ -761,7 +762,7 @@ agfxQueryPool* agfxQueryPoolCreate(agfxDevice* device, agfxCommandQueue* queue, 
 void agfxQueryPoolDestroy(agfxDevice* device, agfxQueryPool* pool) {
     if (pool->d3d12ReadbackBuffer) pool->d3d12ReadbackBuffer->Release();
     if (pool->d3d12QueryHeap) pool->d3d12QueryHeap->Release();
-    device->createInfo.free(pool);
+    device->createInfo.free(pool, device->createInfo.userData);
 }
 
 void agfxCommandBufferWriteTimestamp(agfxCommandBuffer* commandBuffer, agfxQueryPool* pool, uint32_t index) {
@@ -788,7 +789,7 @@ void agfxQueryPoolReadback(agfxDevice* device, agfxQueryPool* pool, uint32_t fir
 
 // Command queue
 agfxCommandQueue* agfxCommandQueueCreate(agfxDevice* device, const agfxCommandQueueCreateInfo* createInfo) {
-    agfxCommandQueue* queue = (agfxCommandQueue*)device->createInfo.allocate(sizeof(agfxCommandQueue));
+    agfxCommandQueue* queue = (agfxCommandQueue*)device->createInfo.allocate(sizeof(agfxCommandQueue), device->createInfo.userData);
     queue->type = createInfo->type;
 
     D3D12_COMMAND_QUEUE_DESC queueDesc = {};
@@ -796,7 +797,7 @@ agfxCommandQueue* agfxCommandQueueCreate(agfxDevice* device, const agfxCommandQu
 
     if (FAILED(device->d3d12Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&queue->d3d12CommandQueue)))) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxCommandQueueCreate: CreateCommandQueue failed");
-        device->createInfo.free(queue);
+        device->createInfo.free(queue, device->createInfo.userData);
         return NULL;
     }
 
@@ -816,7 +817,7 @@ void agfxCommandQueueDestroy(agfxDevice* device, agfxCommandQueue* queue) {
         }
     }
     if (queue->d3d12CommandQueue) queue->d3d12CommandQueue->Release();
-    device->createInfo.free(queue);
+    device->createInfo.free(queue, device->createInfo.userData);
 }
 
 void agfxCommandQueueSignal(agfxCommandQueue* queue, agfxFence* fence, uint64_t value) {
@@ -838,20 +839,20 @@ void agfxCommandQueueSubmit(agfxCommandQueue* queue, agfxCommandBuffer** command
 // Command buffer
 
 agfxCommandBuffer* agfxCommandBufferCreate(agfxDevice* device, agfxCommandQueue* queue) {
-    agfxCommandBuffer* commandBuffer = (agfxCommandBuffer*)device->createInfo.allocate(sizeof(agfxCommandBuffer));
+    agfxCommandBuffer* commandBuffer = (agfxCommandBuffer*)device->createInfo.allocate(sizeof(agfxCommandBuffer), device->createInfo.userData);
     commandBuffer->isRecording = true;
     commandBuffer->device = device;
     commandBuffer->queueType = queue->type;
 
     if (FAILED(device->d3d12Device->CreateCommandAllocator(agfxCommandQueueTypeToD3D12CommandListType(queue->type), IID_PPV_ARGS(&commandBuffer->d3d12CommandAllocator)))) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxCommandBufferCreate: CreateCommandAllocator failed");
-        device->createInfo.free(commandBuffer);
+        device->createInfo.free(commandBuffer, device->createInfo.userData);
         return NULL;
     }
     if (FAILED(device->d3d12Device->CreateCommandList(0, agfxCommandQueueTypeToD3D12CommandListType(queue->type), commandBuffer->d3d12CommandAllocator, nullptr, IID_PPV_ARGS(&commandBuffer->d3d12CommandList)))) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxCommandBufferCreate: CreateCommandList failed");
         commandBuffer->d3d12CommandAllocator->Release();
-        device->createInfo.free(commandBuffer);
+        device->createInfo.free(commandBuffer, device->createInfo.userData);
         return NULL;
     }
     return commandBuffer;
@@ -860,7 +861,7 @@ agfxCommandBuffer* agfxCommandBufferCreate(agfxDevice* device, agfxCommandQueue*
 void agfxCommandBufferDestroy(agfxDevice* device, agfxCommandBuffer* commandBuffer) {
     if (commandBuffer->d3d12CommandList) commandBuffer->d3d12CommandList->Release();
     if (commandBuffer->d3d12CommandAllocator) commandBuffer->d3d12CommandAllocator->Release();
-    device->createInfo.free(commandBuffer);
+    device->createInfo.free(commandBuffer, device->createInfo.userData);
 }
 
 void agfxCommandBufferReset(agfxCommandBuffer* commandBuffer) {
@@ -1031,12 +1032,16 @@ static D3D12_RESOURCE_DESC agfxTextureResourceDesc(const agfxTextureCreateInfo* 
     resourceDesc.SampleDesc.Count = 1;
     resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     resourceDesc.Format = agfxTextureFormatToDXGIFormat(createInfo->format);
+    // A D32_FLOAT resource cannot carry an SRV. A depth texture that is also sampled has to be
+    // created typeless so the DSV can stay D32_FLOAT while the SRV reinterprets it as R32_FLOAT.
+    if (createInfo->format == AGFX_TEXTURE_FORMAT_DEPTH32F && (createInfo->usage & AGFX_TEXTURE_USAGE_SAMPLED))
+        resourceDesc.Format = DXGI_FORMAT_R32_TYPELESS;
     resourceDesc.Flags = agfxTextureUsageToD3D12ResourceFlags(createInfo->usage);
     return resourceDesc;
 }
 
 agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* createInfo) {
-    agfxTexture* texture = new (device->createInfo.allocate(sizeof(agfxTexture))) agfxTexture();
+    agfxTexture* texture = new (device->createInfo.allocate(sizeof(agfxTexture), device->createInfo.userData)) agfxTexture();
     memcpy(&texture->createInfo, createInfo, sizeof(agfxTextureCreateInfo));
 
     D3D12_RESOURCE_DESC resourceDesc = agfxTextureResourceDesc(createInfo);
@@ -1045,7 +1050,7 @@ agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* 
     if (createInfo->heap) {
         if (createInfo->heap->createInfo.memoryType != AGFX_BUFFER_MEMORY_TYPE_GPU_ONLY) {
             agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxTextureCreate: textures may only be placed in AGFX_BUFFER_MEMORY_TYPE_GPU_ONLY heaps");
-            device->createInfo.free(texture);
+            device->createInfo.free(texture, device->createInfo.userData);
             return NULL;
         }
         hr = device->d3d12Device->CreatePlacedResource(
@@ -1074,7 +1079,7 @@ agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* 
         }
     }
     if (FAILED(hr)) {
-        device->createInfo.free(texture);
+        device->createInfo.free(texture, device->createInfo.userData);
         return NULL;
     }
 
@@ -1087,7 +1092,7 @@ agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* 
 void agfxTextureDestroy(agfxDevice* device, agfxTexture* texture) {
     if (texture->d3d12Resource) texture->d3d12Resource->Release();
     texture->~agfxTexture();
-    device->createInfo.free(texture);
+    device->createInfo.free(texture, device->createInfo.userData);
 }
 
 void agfxTextureGetInfo(agfxTexture* texture, agfxTextureCreateInfo* info) {
@@ -1119,7 +1124,7 @@ static D3D12_RESOURCE_DESC agfxBufferResourceDesc(const agfxBufferCreateInfo* cr
 }
 
 agfxBuffer* agfxBufferCreate(agfxDevice* device, const agfxBufferCreateInfo* createInfo) {
-    agfxBuffer* buffer = (agfxBuffer*)device->createInfo.allocate(sizeof(agfxBuffer));
+    agfxBuffer* buffer = (agfxBuffer*)device->createInfo.allocate(sizeof(agfxBuffer), device->createInfo.userData);
     memcpy(&buffer->createInfo, createInfo, sizeof(agfxBufferCreateInfo));
 
     D3D12_RESOURCE_DESC resourceDesc = agfxBufferResourceDesc(createInfo);
@@ -1152,7 +1157,7 @@ agfxBuffer* agfxBufferCreate(agfxDevice* device, const agfxBufferCreateInfo* cre
         }
     }
     if (FAILED(hr)) {
-        device->createInfo.free(buffer);
+        device->createInfo.free(buffer, device->createInfo.userData);
         return NULL;
     }
     return buffer;
@@ -1160,7 +1165,7 @@ agfxBuffer* agfxBufferCreate(agfxDevice* device, const agfxBufferCreateInfo* cre
 
 void agfxBufferDestroy(agfxDevice* device, agfxBuffer* buffer) {
     if (buffer->d3d12Resource) buffer->d3d12Resource->Release();
-    device->createInfo.free(buffer);
+    device->createInfo.free(buffer, device->createInfo.userData);
 }
 
 void* agfxBufferMap(agfxBuffer* buffer) {
@@ -1194,7 +1199,7 @@ agfxHeap* agfxHeapCreate(agfxDevice* device, const agfxHeapCreateInfo* createInf
         return NULL;
     }
 
-    agfxHeap* heap = (agfxHeap*)device->createInfo.allocate(sizeof(agfxHeap));
+    agfxHeap* heap = (agfxHeap*)device->createInfo.allocate(sizeof(agfxHeap), device->createInfo.userData);
     memcpy(&heap->createInfo, createInfo, sizeof(agfxHeapCreateInfo));
 
     const uint64_t alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
@@ -1206,7 +1211,7 @@ agfxHeap* agfxHeapCreate(agfxDevice* device, const agfxHeapCreateInfo* createInf
 
     if (FAILED(device->d3d12Device->CreateHeap(&heapDesc, IID_PPV_ARGS(&heap->d3d12Heap)))) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxHeapCreate: CreateHeap failed");
-        device->createInfo.free(heap);
+        device->createInfo.free(heap, device->createInfo.userData);
         return NULL;
     }
     return heap;
@@ -1214,7 +1219,7 @@ agfxHeap* agfxHeapCreate(agfxDevice* device, const agfxHeapCreateInfo* createInf
 
 void agfxHeapDestroy(agfxDevice* device, agfxHeap* heap) {
     if (heap->d3d12Heap) heap->d3d12Heap->Release();
-    device->createInfo.free(heap);
+    device->createInfo.free(heap, device->createInfo.userData);
 }
 
 void agfxDeviceGetTextureAllocationInfo(agfxDevice* device, const agfxTextureCreateInfo* createInfo, agfxAllocationInfo* info) {
@@ -1261,7 +1266,7 @@ static D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS agfxAccelerationStru
 }
 
 agfxAccelerationStructure* agfxAccelerationStructureCreate(agfxDevice* device, const agfxAccelerationStructureCreateInfo* createInfo) {
-    agfxAccelerationStructure* accelerationStructure = (agfxAccelerationStructure*)device->createInfo.allocate(sizeof(agfxAccelerationStructure));
+    agfxAccelerationStructure* accelerationStructure = (agfxAccelerationStructure*)device->createInfo.allocate(sizeof(agfxAccelerationStructure), device->createInfo.userData);
     new (accelerationStructure) agfxAccelerationStructure();
     memcpy(&accelerationStructure->createInfo, createInfo, sizeof(agfxAccelerationStructureCreateInfo));
 
@@ -1317,7 +1322,7 @@ agfxAccelerationStructure* agfxAccelerationStructureCreate(agfxDevice* device, c
             IID_PPV_ARGS(&accelerationStructure->instanceBuffer)))) {
             agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxAccelerationStructureCreate: CreateCommittedResource for instance buffer failed");
             accelerationStructure->~agfxAccelerationStructure();
-            device->createInfo.free(accelerationStructure);
+            device->createInfo.free(accelerationStructure, device->createInfo.userData);
             return NULL;
         }
 
@@ -1356,16 +1361,17 @@ agfxAccelerationStructure* agfxAccelerationStructureCreate(agfxDevice* device, c
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxAccelerationStructureCreate: CreateCommittedResource failed");
         if (accelerationStructure->instanceBuffer) accelerationStructure->instanceBuffer->Release();
         accelerationStructure->~agfxAccelerationStructure();
-        device->createInfo.free(accelerationStructure);
+        device->createInfo.free(accelerationStructure, device->createInfo.userData);
         return NULL;
     }
+    accelerationStructure->gpuVirtualAddress = accelerationStructure->d3d12Resource->GetGPUVirtualAddress();
 
     if (createInfo->type == AGFX_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL) {
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_UNKNOWN;
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.RaytracingAccelerationStructure.Location = accelerationStructure->d3d12Resource->GetGPUVirtualAddress();
+        srvDesc.RaytracingAccelerationStructure.Location = accelerationStructure->gpuVirtualAddress;
         accelerationStructure->descriptor = device->descriptorManager->writeSRV(nullptr, &srvDesc);
     }
 
@@ -1378,7 +1384,7 @@ agfxAccelerationStructure* agfxAccelerationStructureCreate(agfxDevice* device, c
 }
 
 agfxAccelerationStructure* agfxAccelerationStructureCreateCompacted(agfxDevice* device, const agfxAccelerationStructureCreateInfo* createInfo, uint64_t compactedSize) {
-    agfxAccelerationStructure* accelerationStructure = (agfxAccelerationStructure*)device->createInfo.allocate(sizeof(agfxAccelerationStructure));
+    agfxAccelerationStructure* accelerationStructure = (agfxAccelerationStructure*)device->createInfo.allocate(sizeof(agfxAccelerationStructure), device->createInfo.userData);
     new (accelerationStructure) agfxAccelerationStructure();
     memcpy(&accelerationStructure->createInfo, createInfo, sizeof(agfxAccelerationStructureCreateInfo));
     accelerationStructure->prebuildInfo.ResultDataMaxSizeInBytes = compactedSize;
@@ -1406,16 +1412,17 @@ agfxAccelerationStructure* agfxAccelerationStructureCreateCompacted(agfxDevice* 
         IID_PPV_ARGS(&accelerationStructure->d3d12Resource)))) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxAccelerationStructureCreateCompacted: CreateCommittedResource failed");
         accelerationStructure->~agfxAccelerationStructure();
-        device->createInfo.free(accelerationStructure);
+        device->createInfo.free(accelerationStructure, device->createInfo.userData);
         return NULL;
     }
+    accelerationStructure->gpuVirtualAddress = accelerationStructure->d3d12Resource->GetGPUVirtualAddress();
 
     if (createInfo->type == AGFX_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL) {
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_UNKNOWN;
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.RaytracingAccelerationStructure.Location = accelerationStructure->d3d12Resource->GetGPUVirtualAddress();
+        srvDesc.RaytracingAccelerationStructure.Location = accelerationStructure->gpuVirtualAddress;
         accelerationStructure->descriptor = device->descriptorManager->writeSRV(nullptr, &srvDesc);
     }
 
@@ -1437,7 +1444,7 @@ void agfxAccelerationStructureDestroy(agfxDevice* device, agfxAccelerationStruct
     }
     if (accelerationStructure->d3d12Resource) accelerationStructure->d3d12Resource->Release();
     accelerationStructure->~agfxAccelerationStructure();
-    device->createInfo.free(accelerationStructure);
+    device->createInfo.free(accelerationStructure, device->createInfo.userData);
 }
 
 void agfxAccelerationStructureGetSizes(agfxDevice* device, agfxAccelerationStructure* accelerationStructure, agfxAccelerationStructureSizes* sizes) {
@@ -1458,7 +1465,7 @@ void agfxAccelerationStructureAddInstances(agfxAccelerationStructure* accelerati
         d3d12Instance.InstanceMask = 0xFF;
         d3d12Instance.InstanceContributionToHitGroupIndex = 0;
         d3d12Instance.Flags = instance->opaque ? D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_OPAQUE : D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_NON_OPAQUE;
-        d3d12Instance.AccelerationStructure = instance->blas->d3d12Resource->GetGPUVirtualAddress();
+        d3d12Instance.AccelerationStructure = instance->blas->gpuVirtualAddress;
     }
     accelerationStructure->currentInstanceCount += instanceCount;
 }
@@ -1476,7 +1483,7 @@ struct agfxTextureView {
 };
 
 agfxTextureView* agfxTextureViewCreate(agfxDevice* device, const agfxTextureViewCreateInfo* createInfo) {
-    agfxTextureView* textureView = (agfxTextureView*)device->createInfo.allocate(sizeof(agfxTextureView));
+    agfxTextureView* textureView = (agfxTextureView*)device->createInfo.allocate(sizeof(agfxTextureView), device->createInfo.userData);
     memset(textureView, 0, sizeof(agfxTextureView));
     memcpy(&textureView->createInfo, createInfo, sizeof(agfxTextureViewCreateInfo));
     textureView->texture = createInfo->texture;
@@ -1497,7 +1504,7 @@ void agfxTextureViewDestroy(agfxDevice* device, agfxTextureView* textureView) {
     if (textureView->descriptor.index != UINT32_MAX) {
         device->descriptorManager->agfxFreeResourceSlot((uint32_t)textureView->descriptor.index);
     }
-    device->createInfo.free(textureView);
+    device->createInfo.free(textureView, device->createInfo.userData);
 }
 
 uint64_t agfxTextureViewGetHandle(agfxTextureView* textureView) {
@@ -1512,7 +1519,7 @@ struct agfxSampler {
 };
 
 agfxSampler* agfxSamplerCreate(agfxDevice* device, const agfxSamplerCreateInfo* createInfo) {
-    agfxSampler* sampler = (agfxSampler*)device->createInfo.allocate(sizeof(agfxSampler));
+    agfxSampler* sampler = (agfxSampler*)device->createInfo.allocate(sizeof(agfxSampler), device->createInfo.userData);
     memset(sampler, 0, sizeof(agfxSampler));
     memcpy(&sampler->createInfo, createInfo, sizeof(agfxSamplerCreateInfo));
     sampler->descriptorManager = device->descriptorManager;
@@ -1527,7 +1534,7 @@ void agfxSamplerDestroy(agfxDevice* device, agfxSampler* sampler) {
     if (sampler->descriptor.index != UINT32_MAX) {
         device->descriptorManager->freeSamplerSlot((uint32_t)sampler->descriptor.index);
     }
-    device->createInfo.free(sampler);
+    device->createInfo.free(sampler, device->createInfo.userData);
 }
 
 uint64_t agfxSamplerGetHandle(agfxSampler* sampler) {
@@ -1543,7 +1550,7 @@ struct agfxBufferView {
 };
 
 agfxBufferView* agfxBufferViewCreate(agfxDevice* device, const agfxBufferViewCreateInfo* createInfo) {
-    agfxBufferView* bufferView = (agfxBufferView*)device->createInfo.allocate(sizeof(agfxBufferView));
+    agfxBufferView* bufferView = (agfxBufferView*)device->createInfo.allocate(sizeof(agfxBufferView), device->createInfo.userData);
     memset(bufferView, 0, sizeof(agfxBufferView));
 
     if (createInfo->type == AGFX_BUFFER_VIEW_TYPE_RAW || createInfo->type == AGFX_BUFFER_VIEW_TYPE_STRUCTURED) {
@@ -1563,7 +1570,7 @@ agfxBufferView* agfxBufferViewCreate(agfxDevice* device, const agfxBufferViewCre
 
 void agfxBufferViewDestroy(agfxDevice* device, agfxBufferView* bufferView) {
     device->descriptorManager->agfxFreeResourceSlot((uint32_t)bufferView->descriptor.index);
-    device->createInfo.free(bufferView);
+    device->createInfo.free(bufferView, device->createInfo.userData);
 }
 
 uint64_t agfxBufferViewGetHandle(agfxBufferView* bufferView) {
@@ -1579,7 +1586,7 @@ struct agfxRenderTarget {
 };
 
 agfxRenderTarget* agfxRenderTargetCreate(agfxDevice* device, const agfxRenderTargetCreateInfo* createInfo) {
-    agfxRenderTarget* renderTarget = (agfxRenderTarget*)device->createInfo.allocate(sizeof(agfxRenderTarget));
+    agfxRenderTarget* renderTarget = (agfxRenderTarget*)device->createInfo.allocate(sizeof(agfxRenderTarget), device->createInfo.userData);
     memset(renderTarget, 0, sizeof(agfxRenderTarget));
     memcpy(&renderTarget->createInfo, createInfo, sizeof(agfxRenderTargetCreateInfo));
     renderTarget->texture = createInfo->texture;
@@ -1602,7 +1609,7 @@ void agfxRenderTargetDestroy(agfxDevice* device, agfxRenderTarget* renderTarget)
     } else {
         device->descriptorManager->freeRTVSlot((uint32_t)renderTarget->descriptor.index);
     }
-    device->createInfo.free(renderTarget);
+    device->createInfo.free(renderTarget, device->createInfo.userData);
 }
 
 // Swap chain
@@ -1653,7 +1660,7 @@ static bool agfxD3D12CheckHDRSupport(IDXGISwapChain4* swapChain) {
 }
 
 agfxSwapChain* agfxSwapChainCreate(agfxDevice* device, const agfxSwapChainCreateInfo* createInfo) {
-    agfxSwapChain* swapChain = (agfxSwapChain*)device->createInfo.allocate(sizeof(agfxSwapChain));
+    agfxSwapChain* swapChain = (agfxSwapChain*)device->createInfo.allocate(sizeof(agfxSwapChain), device->createInfo.userData);
     memset(swapChain, 0, sizeof(agfxSwapChain));
     memcpy(&swapChain->createInfo, createInfo, sizeof(agfxSwapChainCreateInfo));
     swapChain->device = device;
@@ -1680,7 +1687,7 @@ agfxSwapChain* agfxSwapChainCreate(agfxDevice* device, const agfxSwapChainCreate
     IDXGISwapChain1* swapChain1 = nullptr;
     if (FAILED(device->dxgiFactory->CreateSwapChainForHwnd(swapChain->queue->d3d12CommandQueue, hwnd, &desc, nullptr, nullptr, &swapChain1))) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxSwapChainCreate: CreateSwapChainForHwnd failed");
-        device->createInfo.free(swapChain);
+        device->createInfo.free(swapChain, device->createInfo.userData);
         return nullptr;
     }
 
@@ -1701,12 +1708,12 @@ agfxSwapChain* agfxSwapChainCreate(agfxDevice* device, const agfxSwapChainCreate
         }
     }
 
-    swapChain->backBuffers = (agfxTexture**)device->createInfo.allocate(sizeof(agfxTexture*) * createInfo->imageCount);
+    swapChain->backBuffers = (agfxTexture**)device->createInfo.allocate(sizeof(agfxTexture*) * createInfo->imageCount, device->createInfo.userData);
     for (uint32_t i = 0; i < createInfo->imageCount; i++) {
         ID3D12Resource* resource = nullptr;
         swapChain->dxgiSwapChain->GetBuffer(i, IID_PPV_ARGS(&resource));
 
-        agfxTexture* texture = new (device->createInfo.allocate(sizeof(agfxTexture))) agfxTexture();
+        agfxTexture* texture = new (device->createInfo.allocate(sizeof(agfxTexture), device->createInfo.userData)) agfxTexture();
         texture->d3d12Resource = resource;
         texture->createInfo.type = AGFX_TEXTURE_TYPE_2D;
         texture->createInfo.format = swapChain->format;
@@ -1731,12 +1738,12 @@ void agfxSwapChainDestroy(agfxDevice* device, agfxSwapChain* swapChain) {
             swapChain->backBuffers[i]->d3d12Resource->Release();
         }
         swapChain->backBuffers[i]->~agfxTexture();
-        device->createInfo.free(swapChain->backBuffers[i]);
+        device->createInfo.free(swapChain->backBuffers[i], device->createInfo.userData);
     }
-    device->createInfo.free(swapChain->backBuffers);
+    device->createInfo.free(swapChain->backBuffers, device->createInfo.userData);
 
     if (swapChain->dxgiSwapChain) swapChain->dxgiSwapChain->Release();
-    device->createInfo.free(swapChain);
+    device->createInfo.free(swapChain, device->createInfo.userData);
 }
 
 void agfxSwapChainResize(agfxDevice* device, agfxSwapChain* swapChain, uint32_t width, uint32_t height) {
@@ -1787,18 +1794,18 @@ struct agfxShaderModule {
 };
 
 agfxShaderModule* agfxShaderModuleCreate(agfxDevice* device, const agfxShaderModuleCreateInfo* createInfo) {
-    agfxShaderModule* shaderModule = (agfxShaderModule*)device->createInfo.allocate(sizeof(agfxShaderModule));
+    agfxShaderModule* shaderModule = (agfxShaderModule*)device->createInfo.allocate(sizeof(agfxShaderModule), device->createInfo.userData);
     memcpy(&shaderModule->createInfo, createInfo, sizeof(agfxShaderModuleCreateInfo));
 
-    shaderModule->createInfo.code = (uint8_t*)device->createInfo.allocate(createInfo->codeSize);
+    shaderModule->createInfo.code = (uint8_t*)device->createInfo.allocate(createInfo->codeSize, device->createInfo.userData);
     memcpy(shaderModule->createInfo.code, createInfo->code, createInfo->codeSize);
 
     return shaderModule;
 }
 
 void agfxShaderModuleDestroy(agfxDevice* device, agfxShaderModule* shaderModule) {
-    device->createInfo.free(shaderModule->createInfo.code);
-    device->createInfo.free(shaderModule);
+    device->createInfo.free(shaderModule->createInfo.code, device->createInfo.userData);
+    device->createInfo.free(shaderModule, device->createInfo.userData);
 }
 
 // Compute pipeline
@@ -1808,7 +1815,7 @@ struct agfxComputePipeline {
 };
 
 agfxComputePipeline* agfxComputePipelineCreate(agfxDevice* device, const agfxComputePipelineCreateInfo* createInfo) {
-    agfxComputePipeline* pipeline = (agfxComputePipeline*)device->createInfo.allocate(sizeof(agfxComputePipeline));
+    agfxComputePipeline* pipeline = (agfxComputePipeline*)device->createInfo.allocate(sizeof(agfxComputePipeline), device->createInfo.userData);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
     psoDesc.pRootSignature = device->globalRootSignature;
@@ -1821,14 +1828,14 @@ agfxComputePipeline* agfxComputePipelineCreate(agfxDevice* device, const agfxCom
 
 	if (FAILED(device->d3d12Device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&pipeline->d3d12PipelineState)))) {
 		agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxComputePipelineCreate: CreateComputePipelineState failed");
-		device->createInfo.free(pipeline);
+		device->createInfo.free(pipeline, device->createInfo.userData);
 		return NULL;
 	}
     return pipeline;
 }
 
 void agfxComputePipelineDestroy(agfxDevice* device, agfxComputePipeline* pipeline) {
-    device->createInfo.free(pipeline);
+    device->createInfo.free(pipeline, device->createInfo.userData);
 }
 
 uint8_t* agfxComputePipelineGetCache(agfxDevice* device, agfxComputePipeline* pipeline, uint64_t* outSize) {
@@ -1838,7 +1845,7 @@ uint8_t* agfxComputePipelineGetCache(agfxDevice* device, agfxComputePipeline* pi
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxComputePipelineGetCache: GetCachedBlob failed");
         return NULL;
     }
-    uint8_t* bytecode = reinterpret_cast<uint8_t*>(device->createInfo.allocate(blob->GetBufferSize()));
+    uint8_t* bytecode = reinterpret_cast<uint8_t*>(device->createInfo.allocate(blob->GetBufferSize(), device->createInfo.userData));
     memcpy(bytecode, blob->GetBufferPointer(), blob->GetBufferSize());
     *outSize = blob->GetBufferSize();
     blob->Release();
@@ -1852,7 +1859,7 @@ struct agfxRenderPipeline {
 };
 
 agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRenderPipelineCreateInfo* createInfo) {
-    agfxRenderPipeline* pipeline = (agfxRenderPipeline*)device->createInfo.allocate(sizeof(agfxRenderPipeline));
+    agfxRenderPipeline* pipeline = (agfxRenderPipeline*)device->createInfo.allocate(sizeof(agfxRenderPipeline), device->createInfo.userData);
     memcpy(&pipeline->createInfo, createInfo, sizeof(agfxRenderPipelineCreateInfo));
 
     if (createInfo->meshShader || createInfo->taskShader) {
@@ -1913,7 +1920,7 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
 
         if (FAILED(device->d3d12Device->CreatePipelineState(&streamDesc, IID_PPV_ARGS(&pipeline->d3d12PipelineState)))) {
             agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxRenderPipelineCreate: CreatePipelineState (mesh pipeline) failed");
-            device->createInfo.free(pipeline);
+            device->createInfo.free(pipeline, device->createInfo.userData);
             return NULL;
         }
     } else {
@@ -1965,7 +1972,7 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
 
         if (FAILED(device->d3d12Device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipeline->d3d12PipelineState)))) {
             agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxRenderPipelineCreate: CreateGraphicsPipelineState failed");
-            device->createInfo.free(pipeline);
+            device->createInfo.free(pipeline, device->createInfo.userData);
             return NULL;
         }
     }
@@ -1975,7 +1982,7 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
 
 void agfxRenderPipelineDestroy(agfxDevice* device, agfxRenderPipeline* pipeline) {
     if (pipeline->d3d12PipelineState) pipeline->d3d12PipelineState->Release();
-    device->createInfo.free(pipeline);
+    device->createInfo.free(pipeline, device->createInfo.userData);
 }
 
 uint8_t* agfxRenderPipelineGetCache(agfxDevice* device, agfxRenderPipeline* pipeline, uint64_t* outSize) {
@@ -1985,7 +1992,7 @@ uint8_t* agfxRenderPipelineGetCache(agfxDevice* device, agfxRenderPipeline* pipe
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxRenderPipelineGetCache: GetCachedBlob failed");
         return NULL;
     }
-    uint8_t* bytecode = reinterpret_cast<uint8_t*>(device->createInfo.allocate(blob->GetBufferSize()));
+    uint8_t* bytecode = reinterpret_cast<uint8_t*>(device->createInfo.allocate(blob->GetBufferSize(), device->createInfo.userData));
     memcpy(bytecode, blob->GetBufferPointer(), blob->GetBufferSize());
     *outSize = blob->GetBufferSize();
     blob->Release();
@@ -1999,12 +2006,12 @@ struct agfxRenderPass {
 };
 
 agfxRenderPass* agfxRenderPassBegin(agfxCommandBuffer* cmdBuffer, const agfxRenderPassCreateInfo* createInfo) {
-    agfxRenderPass* renderPass = (agfxRenderPass*)cmdBuffer->device->createInfo.tempAllocate(sizeof(agfxRenderPass));
+    agfxRenderPass* renderPass = (agfxRenderPass*)cmdBuffer->device->createInfo.tempAllocate(sizeof(agfxRenderPass), cmdBuffer->device->createInfo.userData);
     memcpy(&renderPass->createInfo, createInfo, sizeof(agfxRenderPassCreateInfo));
     renderPass->commandBuffer = cmdBuffer;
 
     ID3D12GraphicsCommandList* commandList = cmdBuffer->d3d12CommandList;
-#ifdef ENABLE_PIX
+#ifdef USE_PIX
     PIXBeginEvent(commandList, PIX_COLOR_DEFAULT, createInfo->name);
 #endif
 
@@ -2080,10 +2087,10 @@ void agfxRenderPassDrawMesh(agfxRenderPass* renderPass, uint32_t groupCountX, ui
 }
 
 void agfxRenderPassEnd(agfxRenderPass* renderPass) {
-#ifdef ENABLE_PIX
+#ifdef USE_PIX
     PIXEndEvent(renderPass->commandBuffer->d3d12CommandList);
 #endif
-    renderPass->commandBuffer->device->createInfo.tempFree(renderPass);
+    renderPass->commandBuffer->device->createInfo.tempFree(renderPass, renderPass->commandBuffer->device->createInfo.userData);
 }
 
 // Compute pass
@@ -2093,10 +2100,10 @@ struct agfxComputePass {
 };
 
 agfxComputePass* agfxComputePassBegin(agfxCommandBuffer* commandBuffer, const char* name) {
-    agfxComputePass* computePass = (agfxComputePass*)commandBuffer->device->createInfo.tempAllocate(sizeof(agfxComputePass));
+    agfxComputePass* computePass = (agfxComputePass*)commandBuffer->device->createInfo.tempAllocate(sizeof(agfxComputePass), commandBuffer->device->createInfo.userData);
     computePass->commandBuffer = commandBuffer;
     computePass->device = commandBuffer->device;
-#ifdef ENABLE_PIX
+#ifdef USE_PIX
     PIXBeginEvent(commandBuffer->d3d12CommandList, PIX_COLOR_DEFAULT, name);
 #endif
     return computePass;
@@ -2305,10 +2312,10 @@ void agfxComputePassDispatch(agfxComputePass* computePass, uint32_t groupCountX,
 }
 
 void agfxComputePassEnd(agfxComputePass* computePass) {
-#ifdef ENABLE_PIX
+#ifdef USE_PIX
     PIXEndEvent(computePass->commandBuffer->d3d12CommandList);
 #endif
-    computePass->device->createInfo.tempFree(computePass);
+    computePass->device->createInfo.tempFree(computePass, computePass->device->createInfo.userData);
 }
 
 // Indirect bundle
@@ -2322,7 +2329,7 @@ struct agfxIndirectBundle {
 };
 
 agfxIndirectBundle* agfxIndirectBundleCreate(agfxDevice* device, const agfxIndirectBundleCreateInfo* createInfo) {
-    agfxIndirectBundle* bundle = (agfxIndirectBundle*)device->createInfo.allocate(sizeof(agfxIndirectBundle));
+    agfxIndirectBundle* bundle = (agfxIndirectBundle*)device->createInfo.allocate(sizeof(agfxIndirectBundle), device->createInfo.userData);
     memset(bundle, 0, sizeof(agfxIndirectBundle));
     memcpy(&bundle->createInfo, createInfo, sizeof(agfxIndirectBundleCreateInfo));
     bundle->stride = agfxIndirectBundleTypeStride(createInfo->type);
@@ -2361,7 +2368,7 @@ void agfxIndirectBundleDestroy(agfxDevice* device, agfxIndirectBundle* bundle) {
     if (bundle->commandsBuffer) agfxBufferDestroy(device, bundle->commandsBuffer);
     if (bundle->countBufferView) agfxBufferViewDestroy(device, bundle->countBufferView);
     if (bundle->countBuffer) agfxBufferDestroy(device, bundle->countBuffer);
-    device->createInfo.free(bundle);
+    device->createInfo.free(bundle, device->createInfo.userData);
 }
 
 uint64_t agfxIndirectBundleGetHandle(agfxIndirectBundle* bundle) {
@@ -2666,8 +2673,12 @@ D3D12_SAMPLER_DESC agfxSamplerCreateInfoToD3D12SamplerDesc(agfxSamplerCreateInfo
 }
 
 D3D12_SHADER_RESOURCE_VIEW_DESC agfxTextureViewTypeToD3D12ShaderResourceViewDesc(agfxTextureViewCreateInfo* createInfo) {
+    agfxTextureFormat format = createInfo->format == AGFX_TEXTURE_FORMAT_UNKNOWN ? createInfo->texture->createInfo.format : createInfo->format;
+
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Format = createInfo->format == AGFX_TEXTURE_FORMAT_UNKNOWN ? agfxTextureFormatToDXGIFormat(createInfo->texture->createInfo.format) : agfxTextureFormatToDXGIFormat(createInfo->format);
+    // The resource behind a sampled depth texture is R32_TYPELESS (see agfxTextureResourceDesc), so
+    // the SRV has to name the color-typed member of that family -- D32_FLOAT is not a valid SRV format.
+    srvDesc.Format = format == AGFX_TEXTURE_FORMAT_DEPTH32F ? DXGI_FORMAT_R32_FLOAT : agfxTextureFormatToDXGIFormat(format);
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     switch (createInfo->type) {
         case AGFX_TEXTURE_TYPE_1D:

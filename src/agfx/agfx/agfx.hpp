@@ -290,6 +290,7 @@ namespace agfx
 
         DeviceCreateInfo& SetAllocator(agfxAllocate allocateFn, agfxFree freeFn) { allocate = allocateFn; free = freeFn; return *this; }
         DeviceCreateInfo& SetTempAllocator(agfxAllocate allocateFn, agfxFree freeFn) { tempAllocate = allocateFn; tempFree = freeFn; return *this; }
+        DeviceCreateInfo& SetUserData(void* value) { userData = value; return *this; }
         DeviceCreateInfo& SetValidation(bool enable) { enableValidation = enable ? 1 : 0; return *this; }
         DeviceCreateInfo& SetLogFunction(agfxLogFunction fn) { logFunction = fn; return *this; }
     };

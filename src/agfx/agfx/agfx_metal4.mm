@@ -797,13 +797,13 @@ static void agfxLog(agfxDevice* device, agfxLogSeverity severity, const char* fm
 }
 
 agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
-    agfxDevice* device = (agfxDevice*)createInfo->allocate(sizeof(agfxDevice));
+    agfxDevice* device = (agfxDevice*)createInfo->allocate(sizeof(agfxDevice), createInfo->userData);
     memcpy(&device->createInfo, createInfo, sizeof(agfxDeviceCreateInfo));
     device->liveQueueCount = 0; // The allocator hands back raw memory; default member initializers do not run.
     device->device = MTLCreateSystemDefaultDevice();
     if (!device->device) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxDeviceCreate: MTLCreateSystemDefaultDevice returned nil, no Metal-capable GPU found");
-        createInfo->free(device);
+        createInfo->free(device, createInfo->userData);
         return nullptr;
     }
 
@@ -816,7 +816,7 @@ agfxDevice* agfxDeviceCreate(const agfxDeviceCreateInfo* createInfo) {
             residencySetError.localizedDescription.UTF8String);
     }
 
-    void* memory = createInfo->allocate(sizeof(agfxMetalBindlessManager));
+    void* memory = createInfo->allocate(sizeof(agfxMetalBindlessManager), createInfo->userData);
     device->bindlessManager = new(memory) agfxMetalBindlessManager(device->device, device->residencySet);
 
     // Engine-internal ICB conversion kernels, compiled from source once per device.
@@ -854,10 +854,10 @@ void agfxDeviceDestroy(agfxDevice* device) {
     }
     device->internalLibrary = nil;
     device->bindlessManager->~agfxMetalBindlessManager();
-    device->createInfo.free(device->bindlessManager);
+    device->createInfo.free(device->bindlessManager, device->createInfo.userData);
     device->residencySet = nil;
     device->device = nil;
-    device->createInfo.free(device);
+    device->createInfo.free(device, device->createInfo.userData);
 }
 
 void agfxDeviceGetInfo(agfxDevice* device, agfxDeviceInfo* info) {
@@ -904,14 +904,14 @@ struct agfxFence {
 };
 
 agfxFence* agfxFenceCreate(agfxDevice* device) {
-    agfxFence* fence = (agfxFence*)device->createInfo.allocate(sizeof(agfxFence));
+    agfxFence* fence = (agfxFence*)device->createInfo.allocate(sizeof(agfxFence), device->createInfo.userData);
     fence->fence = [device->device newSharedEvent];
     return fence;
 }
 
 void agfxFenceDestroy(agfxDevice* device, agfxFence* fence) {
     fence->fence = nil;
-    device->createInfo.free(fence);
+    device->createInfo.free(fence, device->createInfo.userData);
 }
 
 void agfxFenceWait(agfxFence* fence, uint64_t value, uint64_t timeout) {
@@ -933,7 +933,7 @@ struct agfxQueryPool {
 };
 
 agfxQueryPool* agfxQueryPoolCreate(agfxDevice* device, agfxCommandQueue* queue, const agfxQueryPoolCreateInfo* createInfo) {
-    agfxQueryPool* pool = (agfxQueryPool*)device->createInfo.allocate(sizeof(agfxQueryPool));
+    agfxQueryPool* pool = (agfxQueryPool*)device->createInfo.allocate(sizeof(agfxQueryPool), device->createInfo.userData);
     pool->count = createInfo->count;
 
     MTL4CounterHeapDescriptor* desc = [MTL4CounterHeapDescriptor new];
@@ -944,7 +944,7 @@ agfxQueryPool* agfxQueryPoolCreate(agfxDevice* device, agfxCommandQueue* queue, 
     if (!pool->heap) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxQueryPoolCreate: newCounterHeapWithDescriptor failed: %s",
             heapError.localizedDescription.UTF8String);
-        device->createInfo.free(pool);
+        device->createInfo.free(pool, device->createInfo.userData);
         return nullptr;
     }
     return pool;
@@ -952,7 +952,7 @@ agfxQueryPool* agfxQueryPoolCreate(agfxDevice* device, agfxCommandQueue* queue, 
 
 void agfxQueryPoolDestroy(agfxDevice* device, agfxQueryPool* pool) {
     pool->heap = nil;
-    device->createInfo.free(pool);
+    device->createInfo.free(pool, device->createInfo.userData);
 }
 
 void agfxCommandBufferResolveQueryPool(agfxCommandBuffer* commandBuffer, agfxQueryPool* pool, uint32_t firstIndex, uint32_t count) {
@@ -980,12 +980,12 @@ struct agfxCommandQueue {
 };
 
 agfxCommandQueue* agfxCommandQueueCreate(agfxDevice* device, const agfxCommandQueueCreateInfo* createInfo) {
-    agfxCommandQueue* queue = (agfxCommandQueue*)device->createInfo.allocate(sizeof(agfxCommandQueue));
+    agfxCommandQueue* queue = (agfxCommandQueue*)device->createInfo.allocate(sizeof(agfxCommandQueue), device->createInfo.userData);
     memcpy(&queue->createInfo, createInfo, sizeof(agfxCommandQueueCreateInfo));
     queue->commandQueue = [device->device newMTL4CommandQueue];
     if (!queue->commandQueue) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxCommandQueueCreate: newMTL4CommandQueue failed");
-        device->createInfo.free(queue);
+        device->createInfo.free(queue, device->createInfo.userData);
         return nullptr;
     }
     [queue->commandQueue addResidencySet:device->residencySet];
@@ -1006,7 +1006,7 @@ void agfxCommandQueueDestroy(agfxDevice* device, agfxCommandQueue* queue) {
         }
     }
     queue->commandQueue = nil;
-    device->createInfo.free(queue);
+    device->createInfo.free(queue, device->createInfo.userData);
 }
 
 void agfxCommandQueueSignal(agfxCommandQueue* queue, agfxFence* fence, uint64_t value) {
@@ -1038,7 +1038,7 @@ struct agfxCommandBuffer {
 };
 
 agfxCommandBuffer* agfxCommandBufferCreate(agfxDevice* device, agfxCommandQueue* queue) {
-    agfxCommandBuffer* commandBuffer = (agfxCommandBuffer*)device->createInfo.allocate(sizeof(agfxCommandBuffer));
+    agfxCommandBuffer* commandBuffer = (agfxCommandBuffer*)device->createInfo.allocate(sizeof(agfxCommandBuffer), device->createInfo.userData);
     // The allocator hands back raw memory; the ARC-managed Metal object members must start nil.
     memset((void*)commandBuffer, 0, sizeof(agfxCommandBuffer));
     commandBuffer->device = device;
@@ -1076,9 +1076,9 @@ agfxCommandBuffer* agfxCommandBufferCreate(agfxDevice* device, agfxCommandQueue*
     [commandBuffer->computeArgumentTable setAddress:device->bindlessManager->resourceHeapBuffer.gpuAddress atIndex:kIRDescriptorHeapBindPoint];
     [commandBuffer->computeArgumentTable setAddress:device->bindlessManager->samplerHeapBuffer.gpuAddress atIndex:kIRSamplerHeapBindPoint];
 
-    void* topLevelArgBufferMemory = device->createInfo.allocate(sizeof(agfxMetalLinearAllocator));
-    void* drawArgumentMemory = device->createInfo.allocate(sizeof(agfxMetalLinearAllocator));
-    void* drawUniformMemory = device->createInfo.allocate(sizeof(agfxMetalLinearAllocator));
+    void* topLevelArgBufferMemory = device->createInfo.allocate(sizeof(agfxMetalLinearAllocator), device->createInfo.userData);
+    void* drawArgumentMemory = device->createInfo.allocate(sizeof(agfxMetalLinearAllocator), device->createInfo.userData);
+    void* drawUniformMemory = device->createInfo.allocate(sizeof(agfxMetalLinearAllocator), device->createInfo.userData);
 
     commandBuffer->topLevelArgBufferAllocator = new(topLevelArgBufferMemory) agfxMetalLinearAllocator(device->device, device->residencySet, sizeof(agfxTLAB) * 1024);
     commandBuffer->drawArgumentAllocator = new(drawArgumentMemory) agfxMetalLinearAllocator(device->device, device->residencySet, (sizeof(uint) * 5) * 4096);
@@ -1091,16 +1091,16 @@ agfxCommandBuffer* agfxCommandBufferCreate(agfxDevice* device, agfxCommandQueue*
 
 void agfxCommandBufferDestroy(agfxDevice* device, agfxCommandBuffer* commandBuffer) {
     commandBuffer->topLevelArgBufferAllocator->~agfxMetalLinearAllocator();
-    device->createInfo.free(commandBuffer->topLevelArgBufferAllocator);
+    device->createInfo.free(commandBuffer->topLevelArgBufferAllocator, device->createInfo.userData);
     commandBuffer->drawArgumentAllocator->~agfxMetalLinearAllocator();
-    device->createInfo.free(commandBuffer->drawArgumentAllocator);
+    device->createInfo.free(commandBuffer->drawArgumentAllocator, device->createInfo.userData);
     commandBuffer->drawUniformAllocator->~agfxMetalLinearAllocator();
-    device->createInfo.free(commandBuffer->drawUniformAllocator);
+    device->createInfo.free(commandBuffer->drawUniformAllocator, device->createInfo.userData);
     commandBuffer->renderArgumentTable = nil;
     commandBuffer->computeArgumentTable = nil;
     commandBuffer->commandBuffer = nil;
     commandBuffer->commandAllocator = nil;
-    device->createInfo.free(commandBuffer);
+    device->createInfo.free(commandBuffer, device->createInfo.userData);
 }
 
 void agfxCommandBufferReset(agfxCommandBuffer* commandBuffer) {
@@ -1193,7 +1193,7 @@ agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* 
         return nullptr;
     }
 
-    agfxTexture* texture = (agfxTexture*)device->createInfo.allocate(sizeof(agfxTexture));
+    agfxTexture* texture = (agfxTexture*)device->createInfo.allocate(sizeof(agfxTexture), device->createInfo.userData);
     memcpy(&texture->createInfo, createInfo, sizeof(agfxTextureCreateInfo));
 
     MTLTextureDescriptor* descriptor = agfxTextureDescriptor(createInfo, createInfo->heap != nullptr);
@@ -1205,7 +1205,7 @@ agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* 
             // agfxDeviceGetTextureAllocationInfo reported, and offset + size must fit the heap.
             agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxTextureCreate: newTextureWithDescriptor:offset: failed at heap offset %llu (misaligned or past the end of the heap?)",
                 (unsigned long long)createInfo->heapOffset);
-            device->createInfo.free(texture);
+            device->createInfo.free(texture, device->createInfo.userData);
             return nullptr;
         }
         // No addAllocation: the heap itself is in the residency set, which covers everything
@@ -1216,7 +1216,7 @@ agfxTexture* agfxTextureCreate(agfxDevice* device, const agfxTextureCreateInfo* 
     texture->texture = [device->device newTextureWithDescriptor:descriptor];
     if (!texture->texture) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxTextureCreate: newTextureWithDescriptor failed");
-        device->createInfo.free(texture);
+        device->createInfo.free(texture, device->createInfo.userData);
         return nullptr;
     }
     [device->residencySet addAllocation:texture->texture];
@@ -1229,7 +1229,7 @@ void agfxTextureDestroy(agfxDevice* device, agfxTexture* texture) {
         [device->residencySet removeAllocation:texture->texture];
     }
     texture->texture = nil;
-    device->createInfo.free(texture);
+    device->createInfo.free(texture, device->createInfo.userData);
 }
 
 void agfxTextureGetInfo(agfxTexture* texture, agfxTextureCreateInfo* info) {
@@ -1255,7 +1255,7 @@ struct agfxComputePass {
 };
 
 agfxComputePass* agfxComputePassBegin(agfxCommandBuffer* commandBuffer, const char* name) {
-    agfxComputePass* computePass = (agfxComputePass*)commandBuffer->device->createInfo.tempAllocate(sizeof(agfxComputePass));
+    agfxComputePass* computePass = (agfxComputePass*)commandBuffer->device->createInfo.tempAllocate(sizeof(agfxComputePass), commandBuffer->device->createInfo.userData);
     computePass->encoder = [commandBuffer->commandBuffer computeCommandEncoder];
     computePass->encoder.label = [NSString stringWithUTF8String:name];
     computePass->device = commandBuffer->device;
@@ -1273,7 +1273,7 @@ void agfxComputePassEnd(agfxComputePass* computePass) {
     [computePass->encoder endEncoding];
     computePass->commandBuffer->currentEncoder = nil;
     computePass->encoder = nil;
-    computePass->device->createInfo.tempFree(computePass);
+    computePass->device->createInfo.tempFree(computePass, computePass->device->createInfo.userData);
 }
 
 void agfxComputePassTextureUAVBarrier(agfxComputePass* computePass, agfxTexture* texture) {
@@ -1374,7 +1374,7 @@ agfxBuffer* agfxBufferCreate(agfxDevice* device, const agfxBufferCreateInfo* cre
         return nullptr;
     }
 
-    agfxBuffer* buffer = (agfxBuffer*)device->createInfo.allocate(sizeof(agfxBuffer));
+    agfxBuffer* buffer = (agfxBuffer*)device->createInfo.allocate(sizeof(agfxBuffer), device->createInfo.userData);
     memcpy(&buffer->createInfo, createInfo, sizeof(agfxBufferCreateInfo));
 
     if (createInfo->heap) {
@@ -1385,7 +1385,7 @@ agfxBuffer* agfxBufferCreate(agfxDevice* device, const agfxBufferCreateInfo* cre
             // See agfxTextureCreate: almost always a misaligned or out-of-range heap offset.
             agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxBufferCreate: newBufferWithLength:options:offset: failed at heap offset %llu (misaligned or past the end of the heap?)",
                 (unsigned long long)createInfo->heapOffset);
-            device->createInfo.free(buffer);
+            device->createInfo.free(buffer, device->createInfo.userData);
             return nullptr;
         }
         // The heap is already in the residency set; that covers everything placed in it.
@@ -1395,7 +1395,7 @@ agfxBuffer* agfxBufferCreate(agfxDevice* device, const agfxBufferCreateInfo* cre
     buffer->buffer = [device->device newBufferWithLength:createInfo->size options:MTLResourceStorageModeShared];
     if (!buffer->buffer) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxBufferCreate: newBufferWithLength failed");
-        device->createInfo.free(buffer);
+        device->createInfo.free(buffer, device->createInfo.userData);
         return nullptr;
     }
     [device->residencySet addAllocation:buffer->buffer];
@@ -1407,7 +1407,7 @@ void agfxBufferDestroy(agfxDevice* device, agfxBuffer* buffer) {
         [device->residencySet removeAllocation:buffer->buffer];
     }
     buffer->buffer = nil;
-    device->createInfo.free(buffer);
+    device->createInfo.free(buffer, device->createInfo.userData);
 }
 
 void* agfxBufferMap(agfxBuffer* buffer) {
@@ -1433,7 +1433,7 @@ void agfxBufferGetInfo(agfxBuffer* buffer, agfxBufferCreateInfo* info) {
 // Unlike D3D12 there is no tier query to gate on; every Metal 4 device supports placement heaps.
 
 agfxHeap* agfxHeapCreate(agfxDevice* device, const agfxHeapCreateInfo* createInfo) {
-    agfxHeap* heap = (agfxHeap*)device->createInfo.allocate(sizeof(agfxHeap));
+    agfxHeap* heap = (agfxHeap*)device->createInfo.allocate(sizeof(agfxHeap), device->createInfo.userData);
     memcpy(&heap->createInfo, createInfo, sizeof(agfxHeapCreateInfo));
 
     MTLHeapDescriptor* descriptor = [MTLHeapDescriptor new];
@@ -1445,7 +1445,7 @@ agfxHeap* agfxHeapCreate(agfxDevice* device, const agfxHeapCreateInfo* createInf
     heap->heap = [device->device newHeapWithDescriptor:descriptor];
     if (!heap->heap) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxHeapCreate: newHeapWithDescriptor failed for a %llu byte heap", (unsigned long long)createInfo->size);
-        device->createInfo.free(heap);
+        device->createInfo.free(heap, device->createInfo.userData);
         return nullptr;
     }
     // One addAllocation for the whole heap: making a heap resident makes everything placed in it
@@ -1459,7 +1459,7 @@ agfxHeap* agfxHeapCreate(agfxDevice* device, const agfxHeapCreateInfo* createInf
 void agfxHeapDestroy(agfxDevice* device, agfxHeap* heap) {
     [device->residencySet removeAllocation:heap->heap];
     heap->heap = nil;
-    device->createInfo.free(heap);
+    device->createInfo.free(heap, device->createInfo.userData);
 }
 
 void agfxDeviceGetTextureAllocationInfo(agfxDevice* device, const agfxTextureCreateInfo* createInfo, agfxAllocationInfo* info) {
@@ -1486,7 +1486,7 @@ struct agfxTextureView {
 };
 
 agfxTextureView* agfxTextureViewCreate(agfxDevice* device, const agfxTextureViewCreateInfo* createInfo) {
-    agfxTextureView* textureView = (agfxTextureView*)device->createInfo.allocate(sizeof(agfxTextureView));
+    agfxTextureView* textureView = (agfxTextureView*)device->createInfo.allocate(sizeof(agfxTextureView), device->createInfo.userData);
     memcpy(&textureView->createInfo, createInfo, sizeof(agfxTextureViewCreateInfo));
     textureView->bindlessManager = device->bindlessManager;
 
@@ -1504,7 +1504,7 @@ agfxTextureView* agfxTextureViewCreate(agfxDevice* device, const agfxTextureView
 
 void agfxTextureViewDestroy(agfxDevice* device, agfxTextureView* textureView) {
     device->bindlessManager->freeTextureView(textureView->allocation.handle);
-    device->createInfo.free(textureView);
+    device->createInfo.free(textureView, device->createInfo.userData);
 }
 
 uint64_t agfxTextureViewGetHandle(agfxTextureView* textureView) {
@@ -1521,7 +1521,7 @@ struct agfxSampler {
 };
 
 agfxSampler* agfxSamplerCreate(agfxDevice* device, const agfxSamplerCreateInfo* createInfo) {
-    agfxSampler* sampler = (agfxSampler*)device->createInfo.allocate(sizeof(agfxSampler));
+    agfxSampler* sampler = (agfxSampler*)device->createInfo.allocate(sizeof(agfxSampler), device->createInfo.userData);
     memcpy(&sampler->createInfo, createInfo, sizeof(agfxSamplerCreateInfo));
     sampler->bindlessManager = device->bindlessManager;
 
@@ -1541,7 +1541,7 @@ agfxSampler* agfxSamplerCreate(agfxDevice* device, const agfxSamplerCreateInfo* 
     sampler->samplerState = [device->device newSamplerStateWithDescriptor:descriptor];
     if (!sampler->samplerState) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxSamplerCreate: newSamplerStateWithDescriptor failed");
-        device->createInfo.free(sampler);
+        device->createInfo.free(sampler, device->createInfo.userData);
         return nullptr;
     }
     sampler->allocation = device->bindlessManager->writeSampler(sampler->samplerState, createInfo->lodBias);
@@ -1551,7 +1551,7 @@ agfxSampler* agfxSamplerCreate(agfxDevice* device, const agfxSamplerCreateInfo* 
 
 void agfxSamplerDestroy(agfxDevice* device, agfxSampler* sampler) {
     device->bindlessManager->freeSampler(sampler->allocation.handle);
-    device->createInfo.free(sampler);
+    device->createInfo.free(sampler, device->createInfo.userData);
 }
 
 uint64_t agfxSamplerGetHandle(agfxSampler* sampler) {
@@ -1566,7 +1566,7 @@ struct agfxBufferView {
 };
 
 agfxBufferView* agfxBufferViewCreate(agfxDevice* device, const agfxBufferViewCreateInfo* createInfo) {
-    agfxBufferView* bufferView = (agfxBufferView*)device->createInfo.allocate(sizeof(agfxBufferView));
+    agfxBufferView* bufferView = (agfxBufferView*)device->createInfo.allocate(sizeof(agfxBufferView), device->createInfo.userData);
     memcpy(&bufferView->createInfo, createInfo, sizeof(agfxBufferViewCreateInfo));
     bufferView->bindlessManager = device->bindlessManager;
     bufferView->allocation = device->bindlessManager->writeBuffer(createInfo->buffer->buffer, createInfo->offset);
@@ -1575,7 +1575,7 @@ agfxBufferView* agfxBufferViewCreate(agfxDevice* device, const agfxBufferViewCre
 
 void agfxBufferViewDestroy(agfxDevice* device, agfxBufferView* bufferView) {
     bufferView->bindlessManager->freeBuffer(bufferView->allocation.handle);
-    device->createInfo.free(bufferView);
+    device->createInfo.free(bufferView, device->createInfo.userData);
 }
 
 uint64_t agfxBufferViewGetHandle(agfxBufferView* bufferView) {
@@ -1590,7 +1590,7 @@ struct agfxRenderTarget {
 };
 
 agfxRenderTarget* agfxRenderTargetCreate(agfxDevice* device, const agfxRenderTargetCreateInfo* createInfo) {
-    agfxRenderTarget* renderTarget = (agfxRenderTarget*)device->createInfo.allocate(sizeof(agfxRenderTarget));
+    agfxRenderTarget* renderTarget = (agfxRenderTarget*)device->createInfo.allocate(sizeof(agfxRenderTarget), device->createInfo.userData);
     memcpy(&renderTarget->createInfo, createInfo, sizeof(agfxRenderTargetCreateInfo));
 
     id<MTLTexture> base = createInfo->texture->texture;
@@ -1615,7 +1615,7 @@ void agfxRenderTargetDestroy(agfxDevice* device, agfxRenderTarget* renderTarget)
     if (renderTarget->isOwned) {
         renderTarget->view = nil;
     }
-    device->createInfo.free(renderTarget);
+    device->createInfo.free(renderTarget, device->createInfo.userData);
 }
 
 // Render pass
@@ -1628,7 +1628,7 @@ struct agfxRenderPass {
 };
 
 agfxRenderPass* agfxRenderPassBegin(agfxCommandBuffer* cmdBuffer, const agfxRenderPassCreateInfo* createInfo) {
-    agfxRenderPass* renderPass = (agfxRenderPass*)cmdBuffer->device->createInfo.tempAllocate(sizeof(agfxRenderPass));
+    agfxRenderPass* renderPass = (agfxRenderPass*)cmdBuffer->device->createInfo.tempAllocate(sizeof(agfxRenderPass), cmdBuffer->device->createInfo.userData);
     renderPass->device = cmdBuffer->device;
     renderPass->cmdBuffer = cmdBuffer;
     
@@ -1669,7 +1669,7 @@ void agfxRenderPassEnd(agfxRenderPass* renderPass) {
     [renderPass->encoder endEncoding];
     renderPass->cmdBuffer->currentEncoder = nil;
     renderPass->encoder = nil;
-    renderPass->device->createInfo.tempFree(renderPass);
+    renderPass->device->createInfo.tempFree(renderPass, renderPass->device->createInfo.userData);
 }
 
 void agfxRenderPassSetViewport(agfxRenderPass* renderPass, float x, float y, float width, float height, float minDepth, float maxDepth) {
@@ -1760,7 +1760,7 @@ void agfxRenderPassDrawMesh(agfxRenderPass* renderPass, uint32_t groupCountX, ui
 
 // Swapchain
 agfxSwapChain* agfxSwapChainCreate(agfxDevice* device, const agfxSwapChainCreateInfo* createInfo) {
-    agfxSwapChain* swapChain = (agfxSwapChain*)device->createInfo.allocate(sizeof(agfxSwapChain));
+    agfxSwapChain* swapChain = (agfxSwapChain*)device->createInfo.allocate(sizeof(agfxSwapChain), device->createInfo.userData);
     memcpy(&swapChain->createInfo, createInfo, sizeof(agfxSwapChainCreateInfo));
     swapChain->device = device;
     swapChain->currentDrawable = nil;
@@ -1776,7 +1776,7 @@ agfxSwapChain* agfxSwapChainCreate(agfxDevice* device, const agfxSwapChainCreate
     swapChain->metalLayer.displaySyncEnabled = createInfo->vsync;
     [createInfo->queue->commandQueue addResidencySet:swapChain->metalLayer.residencySet];
 
-    swapChain->wrapperTexture = (agfxTexture*)device->createInfo.allocate(sizeof(agfxTexture));
+    swapChain->wrapperTexture = (agfxTexture*)device->createInfo.allocate(sizeof(agfxTexture), device->createInfo.userData);
     swapChain->wrapperTexture->texture = nil;
     swapChain->wrapperTexture->createInfo.type = AGFX_TEXTURE_TYPE_2D;
     swapChain->wrapperTexture->createInfo.format = createInfo->isHDR ? AGFX_TEXTURE_FORMAT_RGBA16F : AGFX_TEXTURE_FORMAT_BGRA8_UNORM;
@@ -1790,8 +1790,8 @@ agfxSwapChain* agfxSwapChainCreate(agfxDevice* device, const agfxSwapChainCreate
 }
 
 void agfxSwapChainDestroy(agfxDevice* device, agfxSwapChain* swapChain) {
-    device->createInfo.free(swapChain->wrapperTexture);
-    device->createInfo.free(swapChain);
+    device->createInfo.free(swapChain->wrapperTexture, device->createInfo.userData);
+    device->createInfo.free(swapChain, device->createInfo.userData);
 }
 
 void agfxSwapChainResize(agfxDevice* device, agfxSwapChain* swapChain, uint32_t width, uint32_t height) {
@@ -1834,7 +1834,7 @@ struct agfxShaderModule {
 };
 
 agfxShaderModule* agfxShaderModuleCreate(agfxDevice* device, const agfxShaderModuleCreateInfo* createInfo) {
-    agfxShaderModule* shaderModule = (agfxShaderModule*)device->createInfo.allocate(sizeof(agfxShaderModule));
+    agfxShaderModule* shaderModule = (agfxShaderModule*)device->createInfo.allocate(sizeof(agfxShaderModule), device->createInfo.userData);
     memcpy(&shaderModule->createInfo, createInfo, sizeof(agfxShaderModuleCreateInfo));
 
     dispatch_data_t data = dispatch_data_create(createInfo->code, createInfo->codeSize, dispatch_get_main_queue(), nullptr);
@@ -1843,14 +1843,14 @@ agfxShaderModule* agfxShaderModuleCreate(agfxDevice* device, const agfxShaderMod
     if (!library) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxShaderModuleCreate: newLibraryWithData failed: %s",
             libraryError.localizedDescription.UTF8String);
-        device->createInfo.free(shaderModule);
+        device->createInfo.free(shaderModule, device->createInfo.userData);
         return nullptr;
     }
     id<MTLFunction> function = [library newFunctionWithName:[NSString stringWithUTF8String:createInfo->entryPoint]];
     if (!function) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxShaderModuleCreate: newFunctionWithName failed for entry point \"%s\"",
             createInfo->entryPoint);
-        device->createInfo.free(shaderModule);
+        device->createInfo.free(shaderModule, device->createInfo.userData);
         return nullptr;
     }
 
@@ -1862,7 +1862,7 @@ agfxShaderModule* agfxShaderModuleCreate(agfxDevice* device, const agfxShaderMod
 void agfxShaderModuleDestroy(agfxDevice* device, agfxShaderModule* shaderModule) {
     shaderModule->library = nil;
     shaderModule->function = nil;
-    device->createInfo.free(shaderModule);
+    device->createInfo.free(shaderModule, device->createInfo.userData);
 }
 
 // Pipeline cache
@@ -1922,7 +1922,7 @@ static uint8_t* agfxMetalSerializeArchive(agfxDevice* device, id<MTLBinaryArchiv
         return NULL;
     }
 
-    uint8_t* bytecode = (uint8_t*)device->createInfo.allocate(data.length);
+    uint8_t* bytecode = (uint8_t*)device->createInfo.allocate(data.length, device->createInfo.userData);
     memcpy(bytecode, data.bytes, data.length);
     *outSize = data.length;
     return bytecode;
@@ -1942,7 +1942,7 @@ static id<MTLBinaryArchive> agfxMetalNewEmptyArchive(agfxDevice* device, const c
 
 // Render pipeline
 agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRenderPipelineCreateInfo* createInfo) {
-    agfxRenderPipeline* pipeline = (agfxRenderPipeline*)device->createInfo.allocate(sizeof(agfxRenderPipeline));
+    agfxRenderPipeline* pipeline = (agfxRenderPipeline*)device->createInfo.allocate(sizeof(agfxRenderPipeline), device->createInfo.userData);
     memcpy(&pipeline->createInfo, createInfo, sizeof(agfxRenderPipelineCreateInfo));
 
     MTLRenderPipelineDescriptor* descriptor = [MTLRenderPipelineDescriptor new];
@@ -1982,7 +1982,7 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
         if (!pipeline->pipelineState) {
             agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxRenderPipelineCreate: newRenderPipelineStateWithMeshDescriptor failed: %s",
                 pipelineError.localizedDescription.UTF8String);
-            device->createInfo.free(pipeline);
+            device->createInfo.free(pipeline, device->createInfo.userData);
             return nullptr;
         }
         pipeline->meshDescriptor = meshDescriptor;
@@ -2010,7 +2010,7 @@ agfxRenderPipeline* agfxRenderPipelineCreate(agfxDevice* device, const agfxRende
         if (!pipeline->pipelineState) {
             agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxRenderPipelineCreate: newRenderPipelineStateWithDescriptor failed: %s",
                 pipelineError.localizedDescription.UTF8String);
-            device->createInfo.free(pipeline);
+            device->createInfo.free(pipeline, device->createInfo.userData);
             return nullptr;
         }
         pipeline->descriptor = descriptor;
@@ -2030,7 +2030,7 @@ void agfxRenderPipelineDestroy(agfxDevice* device, agfxRenderPipeline* pipeline)
     pipeline->depthStencilState = nil;
     pipeline->descriptor = nil;
     pipeline->meshDescriptor = nil;
-    device->createInfo.free(pipeline);
+    device->createInfo.free(pipeline, device->createInfo.userData);
 }
 
 uint8_t* agfxRenderPipelineGetCache(agfxDevice* device, agfxRenderPipeline* pipeline, uint64_t* outSize) {
@@ -2062,14 +2062,14 @@ agfxComputePipeline* agfxComputePipelineCreate(agfxDevice* device, const agfxCom
     id<MTLBinaryArchive> archive = agfxMetalLoadArchive(device, createInfo->cache, createInfo->cacheSize);
     if (archive) descriptor.binaryArchives = @[archive];
 
-    agfxComputePipeline* pipeline = (agfxComputePipeline*)device->createInfo.allocate(sizeof(agfxComputePipeline));
+    agfxComputePipeline* pipeline = (agfxComputePipeline*)device->createInfo.allocate(sizeof(agfxComputePipeline), device->createInfo.userData);
     memcpy(&pipeline->createInfo, createInfo, sizeof(agfxComputePipelineCreateInfo));
     NSError* pipelineError = nil;
     pipeline->pipelineState = [device->device newComputePipelineStateWithDescriptor:descriptor options:MTLPipelineOptionNone reflection:nil error:&pipelineError];
     if (!pipeline->pipelineState) {
         agfxLog(device, AGFX_LOG_SEVERITY_ERROR, "agfxComputePipelineCreate: newComputePipelineStateWithDescriptor failed: %s",
             pipelineError.localizedDescription.UTF8String);
-        device->createInfo.free(pipeline);
+        device->createInfo.free(pipeline, device->createInfo.userData);
         return nullptr;
     }
     pipeline->descriptor = descriptor;
@@ -2079,7 +2079,7 @@ agfxComputePipeline* agfxComputePipelineCreate(agfxDevice* device, const agfxCom
 void agfxComputePipelineDestroy(agfxDevice* device, agfxComputePipeline* pipeline) {
     pipeline->pipelineState = nil;
     pipeline->descriptor = nil;
-    device->createInfo.free(pipeline);
+    device->createInfo.free(pipeline, device->createInfo.userData);
 }
 
 uint8_t* agfxComputePipelineGetCache(agfxDevice* device, agfxComputePipeline* pipeline, uint64_t* outSize) {
@@ -2097,7 +2097,7 @@ uint8_t* agfxComputePipelineGetCache(agfxDevice* device, agfxComputePipeline* pi
 
 // Acceleration structure
 agfxAccelerationStructure* agfxAccelerationStructureCreate(agfxDevice* device, const agfxAccelerationStructureCreateInfo* createInfo) {
-    agfxAccelerationStructure* accelerationStructure = (agfxAccelerationStructure*)device->createInfo.allocate(sizeof(agfxAccelerationStructure));
+    agfxAccelerationStructure* accelerationStructure = (agfxAccelerationStructure*)device->createInfo.allocate(sizeof(agfxAccelerationStructure), device->createInfo.userData);
     memcpy(&accelerationStructure->createInfo, createInfo, sizeof(agfxAccelerationStructureCreateInfo));
     
     if (createInfo->type == AGFX_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL) {
@@ -2188,7 +2188,7 @@ agfxAccelerationStructure* agfxAccelerationStructureCreate(agfxDevice* device, c
 }
 
 agfxAccelerationStructure* agfxAccelerationStructureCreateCompacted(agfxDevice* device, const agfxAccelerationStructureCreateInfo* createInfo, uint64_t compactedSize) {
-    agfxAccelerationStructure* accelerationStructure = (agfxAccelerationStructure*)device->createInfo.allocate(sizeof(agfxAccelerationStructure));
+    agfxAccelerationStructure* accelerationStructure = (agfxAccelerationStructure*)device->createInfo.allocate(sizeof(agfxAccelerationStructure), device->createInfo.userData);
     memcpy(&accelerationStructure->createInfo, createInfo, sizeof(agfxAccelerationStructureCreateInfo));
     accelerationStructure->sizes.accelerationStructureSize = compactedSize;
     accelerationStructure->accelerationStructure = [device->device newAccelerationStructureWithSize:compactedSize];
@@ -2205,7 +2205,7 @@ void agfxAccelerationStructureDestroy(agfxDevice* device, agfxAccelerationStruct
     if (accelerationStructure->instanceBuffer) accelerationStructure->instanceBuffer = nil;
     if (accelerationStructure->resourceIDBuffer) accelerationStructure->resourceIDBuffer = nil;
     device->bindlessManager->freeAccelerationStructure(accelerationStructure->asBindlessHandle.handle);
-    device->createInfo.free(accelerationStructure);
+    device->createInfo.free(accelerationStructure, device->createInfo.userData);
 }
 
 void agfxAccelerationStructureGetSizes(agfxDevice* device, agfxAccelerationStructure* accelerationStructure, agfxAccelerationStructureSizes* sizes) {
@@ -2474,7 +2474,7 @@ struct agfxIndirectBundle {
 };
 
 agfxIndirectBundle* agfxIndirectBundleCreate(agfxDevice* device, const agfxIndirectBundleCreateInfo* createInfo) {
-    agfxIndirectBundle* bundle = (agfxIndirectBundle*)device->createInfo.allocate(sizeof(agfxIndirectBundle));
+    agfxIndirectBundle* bundle = (agfxIndirectBundle*)device->createInfo.allocate(sizeof(agfxIndirectBundle), device->createInfo.userData);
     // The allocator hands back raw memory; the ARC-managed Metal object members must start nil.
     memset((void*)bundle, 0, sizeof(agfxIndirectBundle));
     memcpy(&bundle->createInfo, createInfo, sizeof(agfxIndirectBundleCreateInfo));
@@ -2583,7 +2583,7 @@ void agfxIndirectBundleDestroy(agfxDevice* device, agfxIndirectBundle* bundle) {
     if (bundle->commandsBuffer) agfxBufferDestroy(device, bundle->commandsBuffer);
     if (bundle->countBufferView) agfxBufferViewDestroy(device, bundle->countBufferView);
     if (bundle->countBuffer) agfxBufferDestroy(device, bundle->countBuffer);
-    device->createInfo.free(bundle);
+    device->createInfo.free(bundle, device->createInfo.userData);
 }
 
 uint64_t agfxIndirectBundleGetHandle(agfxIndirectBundle* bundle) {

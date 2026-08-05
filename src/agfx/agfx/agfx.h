@@ -14,11 +14,13 @@ extern "C" {
 
 /// @brief Allocation function signature for agfxDeviceCreate.
 /// @param size The number of bytes to allocate.
-typedef void* (*agfxAllocate)(uint64_t size);
+/// @param userData The agfxDeviceCreateInfo::userData pointer, passed through verbatim.
+typedef void* (*agfxAllocate)(uint64_t size, void* userData);
 
 /// @brief Free function signature for agfxDeviceCreate.
 /// @param ptr The pointer to free, or nullptr.
-typedef void (*agfxFree)(void* ptr);
+/// @param userData The agfxDeviceCreateInfo::userData pointer, passed through verbatim.
+typedef void (*agfxFree)(void* ptr, void* userData);
 
 /// @brief Severity level for messages reported through agfxLogFunction.
 typedef enum agfxLogSeverity {
@@ -130,6 +132,9 @@ typedef struct agfxDeviceCreateInfo {
     agfxAllocate tempAllocate;
     /// @brief The free function to use for temporary deallocations, such as for encoders.
     agfxFree tempFree;
+    /// @brief Optional user pointer handed back verbatim to allocate/free/tempAllocate/tempFree.
+    ///        Leave nullptr if unused.
+    void* userData;
     /// @brief Whether to enable validation layers for debugging. Set to 1 to enable, 0 to disable.
     agfxBool enableValidation;
     /// @brief Optional log function for reporting warnings and errors from the device and its resources. Leave nullptr to disable logging.
